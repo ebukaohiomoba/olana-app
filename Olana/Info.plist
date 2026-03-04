@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.321480376868-u3029gubpv6cvsfh4up7j2qaksnkq3ur</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string></string>
+		<string>remote-notification</string>
+	</array>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Olana reads your calendar so you always know what&apos;s coming — without switching apps. Your data stays on your device and is never shared.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSAlarmsUsageDescription</key>
+	<string>Olana uses full-screen alarms to make sure you never miss a critical event, even when your phone is on silent.</string>
+</dict>
+</plist>

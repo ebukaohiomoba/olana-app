@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>321480376868-u3029gubpv6cvsfh4up7j2qaksnkq3ur.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.321480376868-u3029gubpv6cvsfh4up7j2qaksnkq3ur</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAjKrCXVmAUBEFDY14nAVBRuEEZokD-0h0</string>
+	<key>GCM_SENDER_ID</key>
+	<string>321480376868</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>Olana</string>
+	<key>PROJECT_ID</key>
+	<string>olana-8ecf0</string>
+	<key>STORAGE_BUCKET</key>
+	<string>olana-8ecf0.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:321480376868:ios:e7003511343a4311c2ceb1</string>
+</dict>
+</plist>

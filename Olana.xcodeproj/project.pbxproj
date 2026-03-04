@@ -1,0 +1,942 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0873CA8D2EBF1C7600D7FF02 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0873CA8C2EBF1C7600D7FF02 /* onnxruntime */; };
+		0873CA8F2EBF1C7600D7FF02 /* onnxruntime_extensions in Frameworks */ = {isa = PBXBuildFile; productRef = 0873CA8E2EBF1C7600D7FF02 /* onnxruntime_extensions */; };
+		0873CAD52EC075BA00D7FF02 /* HomeBackground.png in Resources */ = {isa = PBXBuildFile; fileRef = 0873CAD42EC075BA00D7FF02 /* HomeBackground.png */; };
+		08E45BAB2F5652430094C134 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 08E45BAA2F5652430094C134 /* WidgetKit.framework */; };
+		08E45BAD2F5652430094C134 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 08E45BAC2F5652430094C134 /* SwiftUI.framework */; };
+		08E45BBE2F5652450094C134 /* OlanaWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 08E45BA82F5652430094C134 /* OlanaWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		08FB20C52F5287600004AE74 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20C42F5287600004AE74 /* FirebaseAnalytics */; };
+		08FB20C72F5287600004AE74 /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20C62F5287600004AE74 /* FirebaseAnalyticsCore */; };
+		08FB20C92F5287600004AE74 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20C82F5287600004AE74 /* FirebaseAuth */; };
+		08FB20CB2F5287600004AE74 /* FirebaseAuthCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20CA2F5287600004AE74 /* FirebaseAuthCombine-Community */; };
+		08FB20CD2F5287600004AE74 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20CC2F5287600004AE74 /* FirebaseCore */; };
+		08FB20CF2F5287600004AE74 /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20CE2F5287600004AE74 /* FirebaseDatabase */; };
+		08FB20D12F5287600004AE74 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20D02F5287600004AE74 /* FirebaseFirestore */; };
+		08FB20D42F5287DE0004AE74 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20D32F5287DE0004AE74 /* GoogleSignIn */; };
+		08FB20D62F5287DE0004AE74 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB20D52F5287DE0004AE74 /* GoogleSignInSwift */; };
+		AA10001C2F529000000AA001 /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = AA10001B2F529000000AA001 /* Lottie */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		08206A6B2E82837000550844 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08206A502E82836E00550844 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 08206A572E82836F00550844;
+			remoteInfo = Novel;
+		};
+		08206A752E82837000550844 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08206A502E82836E00550844 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 08206A572E82836F00550844;
+			remoteInfo = Novel;
+		};
+		08E45BBC2F5652450094C134 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08206A502E82836E00550844 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 08E45BA72F5652430094C134;
+			remoteInfo = OlanaWidgetsExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		08E45BC32F5652450094C134 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				08E45BBE2F5652450094C134 /* OlanaWidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		08206A582E82836F00550844 /* Olana.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Olana.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		08206A6A2E82837000550844 /* OlanaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OlanaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		08206A742E82837000550844 /* OlanaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OlanaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0873CAD42EC075BA00D7FF02 /* HomeBackground.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = HomeBackground.png; sourceTree = "<group>"; };
+		08E45BA82F5652430094C134 /* OlanaWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OlanaWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		08E45BAA2F5652430094C134 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		08E45BAC2F5652430094C134 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0831FB042E9B630A00999EF6 /* Exceptions for "Olana" folder in "Olana" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 08206A572E82836F00550844 /* Olana */;
+		};
+		08E45BC22F5652450094C134 /* Exceptions for "OlanaWidgets" folder in "OlanaWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 08E45BA72F5652430094C134 /* OlanaWidgetsExtension */;
+		};
+		08E45BC52F5653AE0094C134 /* Exceptions for "Olana" folder in "OlanaWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				OlanaActivityAttributes.swift,
+			);
+			target = 08E45BA72F5652430094C134 /* OlanaWidgetsExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		08206A5A2E82836F00550844 /* Olana */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0831FB042E9B630A00999EF6 /* Exceptions for "Olana" folder in "Olana" target */,
+				08E45BC52F5653AE0094C134 /* Exceptions for "Olana" folder in "OlanaWidgetsExtension" target */,
+			);
+			path = Olana;
+			sourceTree = "<group>";
+		};
+		08206A6D2E82837000550844 /* NovelTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NovelTests;
+			sourceTree = "<group>";
+		};
+		08206A772E82837000550844 /* NovelUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NovelUITests;
+			sourceTree = "<group>";
+		};
+		08E45BAE2F5652430094C134 /* OlanaWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				08E45BC22F5652450094C134 /* Exceptions for "OlanaWidgets" folder in "OlanaWidgetsExtension" target */,
+			);
+			path = OlanaWidgets;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		08206A552E82836F00550844 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0873CA8F2EBF1C7600D7FF02 /* onnxruntime_extensions in Frameworks */,
+				08FB20CB2F5287600004AE74 /* FirebaseAuthCombine-Community in Frameworks */,
+				08FB20C92F5287600004AE74 /* FirebaseAuth in Frameworks */,
+				0873CA8D2EBF1C7600D7FF02 /* onnxruntime in Frameworks */,
+				08FB20CD2F5287600004AE74 /* FirebaseCore in Frameworks */,
+				08FB20D42F5287DE0004AE74 /* GoogleSignIn in Frameworks */,
+				08FB20D12F5287600004AE74 /* FirebaseFirestore in Frameworks */,
+				08FB20C52F5287600004AE74 /* FirebaseAnalytics in Frameworks */,
+				08FB20CF2F5287600004AE74 /* FirebaseDatabase in Frameworks */,
+				08FB20C72F5287600004AE74 /* FirebaseAnalyticsCore in Frameworks */,
+				08FB20D62F5287DE0004AE74 /* GoogleSignInSwift in Frameworks */,
+				AA10001C2F529000000AA001 /* Lottie in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08206A672E82837000550844 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08206A712E82837000550844 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08E45BA52F5652430094C134 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				08E45BAD2F5652430094C134 /* SwiftUI.framework in Frameworks */,
+				08E45BAB2F5652430094C134 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		08206A4F2E82836E00550844 = {
+			isa = PBXGroup;
+			children = (
+				08206A5A2E82836F00550844 /* Olana */,
+				08206A6D2E82837000550844 /* NovelTests */,
+				08206A772E82837000550844 /* NovelUITests */,
+				08E45BAE2F5652430094C134 /* OlanaWidgets */,
+				08E45BA92F5652430094C134 /* Frameworks */,
+				08206A592E82836F00550844 /* Products */,
+				0873CAD42EC075BA00D7FF02 /* HomeBackground.png */,
+			);
+			sourceTree = "<group>";
+		};
+		08206A592E82836F00550844 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				08206A582E82836F00550844 /* Olana.app */,
+				08206A6A2E82837000550844 /* OlanaTests.xctest */,
+				08206A742E82837000550844 /* OlanaUITests.xctest */,
+				08E45BA82F5652430094C134 /* OlanaWidgetsExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		08E45BA92F5652430094C134 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				08E45BAA2F5652430094C134 /* WidgetKit.framework */,
+				08E45BAC2F5652430094C134 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		08206A572E82836F00550844 /* Olana */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08206A7E2E82837000550844 /* Build configuration list for PBXNativeTarget "Olana" */;
+			buildPhases = (
+				08206A542E82836F00550844 /* Sources */,
+				08206A552E82836F00550844 /* Frameworks */,
+				08206A562E82836F00550844 /* Resources */,
+				08E45BC32F5652450094C134 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				08E45BBD2F5652450094C134 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				08206A5A2E82836F00550844 /* Olana */,
+			);
+			name = Olana;
+			packageProductDependencies = (
+				0873CA8C2EBF1C7600D7FF02 /* onnxruntime */,
+				0873CA8E2EBF1C7600D7FF02 /* onnxruntime_extensions */,
+				08FB20C42F5287600004AE74 /* FirebaseAnalytics */,
+				08FB20C62F5287600004AE74 /* FirebaseAnalyticsCore */,
+				08FB20C82F5287600004AE74 /* FirebaseAuth */,
+				08FB20CA2F5287600004AE74 /* FirebaseAuthCombine-Community */,
+				08FB20CC2F5287600004AE74 /* FirebaseCore */,
+				08FB20CE2F5287600004AE74 /* FirebaseDatabase */,
+				08FB20D02F5287600004AE74 /* FirebaseFirestore */,
+				08FB20D32F5287DE0004AE74 /* GoogleSignIn */,
+				08FB20D52F5287DE0004AE74 /* GoogleSignInSwift */,
+				AA10001B2F529000000AA001 /* Lottie */,
+			);
+			productName = Novel;
+			productReference = 08206A582E82836F00550844 /* Olana.app */;
+			productType = "com.apple.product-type.application";
+		};
+		08206A692E82837000550844 /* OlanaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08206A812E82837000550844 /* Build configuration list for PBXNativeTarget "OlanaTests" */;
+			buildPhases = (
+				08206A662E82837000550844 /* Sources */,
+				08206A672E82837000550844 /* Frameworks */,
+				08206A682E82837000550844 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				08206A6C2E82837000550844 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				08206A6D2E82837000550844 /* NovelTests */,
+			);
+			name = OlanaTests;
+			packageProductDependencies = (
+			);
+			productName = NovelTests;
+			productReference = 08206A6A2E82837000550844 /* OlanaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		08206A732E82837000550844 /* OlanaUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08206A842E82837000550844 /* Build configuration list for PBXNativeTarget "OlanaUITests" */;
+			buildPhases = (
+				08206A702E82837000550844 /* Sources */,
+				08206A712E82837000550844 /* Frameworks */,
+				08206A722E82837000550844 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				08206A762E82837000550844 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				08206A772E82837000550844 /* NovelUITests */,
+			);
+			name = OlanaUITests;
+			packageProductDependencies = (
+			);
+			productName = NovelUITests;
+			productReference = 08206A742E82837000550844 /* OlanaUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		08E45BA72F5652430094C134 /* OlanaWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08E45BBF2F5652450094C134 /* Build configuration list for PBXNativeTarget "OlanaWidgetsExtension" */;
+			buildPhases = (
+				08E45BA42F5652430094C134 /* Sources */,
+				08E45BA52F5652430094C134 /* Frameworks */,
+				08E45BA62F5652430094C134 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				08E45BAE2F5652430094C134 /* OlanaWidgets */,
+			);
+			name = OlanaWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = OlanaWidgetsExtension;
+			productReference = 08E45BA82F5652430094C134 /* OlanaWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		08206A502E82836E00550844 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					08206A572E82836F00550844 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					08206A692E82837000550844 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 08206A572E82836F00550844;
+					};
+					08206A732E82837000550844 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 08206A572E82836F00550844;
+					};
+					08E45BA72F5652430094C134 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = 08206A532E82836E00550844 /* Build configuration list for PBXProject "Olana" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 08206A4F2E82836E00550844;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0873CA8B2EBF1C7600D7FF02 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
+				08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				08FB20D22F5287DE0004AE74 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				AA10001A2F529000000AA001 /* XCRemoteSwiftPackageReference "lottie-spm" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 08206A592E82836F00550844 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				08206A572E82836F00550844 /* Olana */,
+				08206A692E82837000550844 /* OlanaTests */,
+				08206A732E82837000550844 /* OlanaUITests */,
+				08E45BA72F5652430094C134 /* OlanaWidgetsExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		08206A562E82836F00550844 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0873CAD52EC075BA00D7FF02 /* HomeBackground.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08206A682E82837000550844 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08206A722E82837000550844 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08E45BA62F5652430094C134 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		08206A542E82836F00550844 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08206A662E82837000550844 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08206A702E82837000550844 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08E45BA42F5652430094C134 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		08206A6C2E82837000550844 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 08206A572E82836F00550844 /* Olana */;
+			targetProxy = 08206A6B2E82837000550844 /* PBXContainerItemProxy */;
+		};
+		08206A762E82837000550844 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 08206A572E82836F00550844 /* Olana */;
+			targetProxy = 08206A752E82837000550844 /* PBXContainerItemProxy */;
+		};
+		08E45BBD2F5652450094C134 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 08E45BA72F5652430094C134 /* OlanaWidgetsExtension */;
+			targetProxy = 08E45BBC2F5652450094C134 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		08206A7C2E82837000550844 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		08206A7D2E82837000550844 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		08206A7F2E82837000550844 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Olana/Olana.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Olana/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Olana;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to convert your speech into text for creating events.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app uses speech recognition to help you quickly create events by speaking. Your speech is processed on-device and not shared with third parties.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Rhejoys.Olana;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		08206A802E82837000550844 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Olana/Olana.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Olana/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Olana;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to convert your speech into text for creating events.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app uses speech recognition to help you quickly create events by speaking. Your speech is processed on-device and not shared with third parties.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Rhejoys.Olana;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		08206A822E82837000550844 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Rhejoys.NovelTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Olana.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Olana";
+			};
+			name = Debug;
+		};
+		08206A832E82837000550844 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Rhejoys.NovelTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Olana.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Olana";
+			};
+			name = Release;
+		};
+		08206A852E82837000550844 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Rhejoys.NovelUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Novel;
+			};
+			name = Debug;
+		};
+		08206A862E82837000550844 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Rhejoys.NovelUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Novel;
+			};
+			name = Release;
+		};
+		08E45BC02F5652450094C134 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OlanaWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = OlanaWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Rhejoys.Olana.OlanaWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		08E45BC12F5652450094C134 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KDW8URXQM;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OlanaWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = OlanaWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Rhejoys.Olana.OlanaWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		08206A532E82836E00550844 /* Build configuration list for PBXProject "Olana" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08206A7C2E82837000550844 /* Debug */,
+				08206A7D2E82837000550844 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		08206A7E2E82837000550844 /* Build configuration list for PBXNativeTarget "Olana" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08206A7F2E82837000550844 /* Debug */,
+				08206A802E82837000550844 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		08206A812E82837000550844 /* Build configuration list for PBXNativeTarget "OlanaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08206A822E82837000550844 /* Debug */,
+				08206A832E82837000550844 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		08206A842E82837000550844 /* Build configuration list for PBXNativeTarget "OlanaUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08206A852E82837000550844 /* Debug */,
+				08206A862E82837000550844 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		08E45BBF2F5652450094C134 /* Build configuration list for PBXNativeTarget "OlanaWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08E45BC02F5652450094C134 /* Debug */,
+				08E45BC12F5652450094C134 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0873CA8B2EBF1C7600D7FF02 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.20.0;
+			};
+		};
+		08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.10.0;
+			};
+		};
+		08FB20D22F5287DE0004AE74 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.1.0;
+			};
+		};
+		AA10001A2F529000000AA001 /* XCRemoteSwiftPackageReference "lottie-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/airbnb/lottie-spm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0873CA8C2EBF1C7600D7FF02 /* onnxruntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0873CA8B2EBF1C7600D7FF02 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime;
+		};
+		0873CA8E2EBF1C7600D7FF02 /* onnxruntime_extensions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0873CA8B2EBF1C7600D7FF02 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime_extensions;
+		};
+		08FB20C42F5287600004AE74 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		08FB20C62F5287600004AE74 /* FirebaseAnalyticsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsCore;
+		};
+		08FB20C82F5287600004AE74 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		08FB20CA2F5287600004AE74 /* FirebaseAuthCombine-Community */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseAuthCombine-Community";
+		};
+		08FB20CC2F5287600004AE74 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		08FB20CE2F5287600004AE74 /* FirebaseDatabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseDatabase;
+		};
+		08FB20D02F5287600004AE74 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08ED93162F5283B600C6EBF6 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		08FB20D32F5287DE0004AE74 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08FB20D22F5287DE0004AE74 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		08FB20D52F5287DE0004AE74 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08FB20D22F5287DE0004AE74 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		AA10001B2F529000000AA001 /* Lottie */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA10001A2F529000000AA001 /* XCRemoteSwiftPackageReference "lottie-spm" */;
+			productName = Lottie;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 08206A502E82836E00550844 /* Project object */;
+}
