@@ -263,7 +263,7 @@ struct OnboardingCalendarScreen: View {
                     try await calendarManager.addGoogleAccount()
                     success = true
                 } catch {
-                    connectionError = "Couldn't connect Google Calendar. You can try again in Settings."
+                    connectionError = "Couldn't connect your Google Calendar. You can try again in Settings."
                 }
 
             case .apple, .unknown:
