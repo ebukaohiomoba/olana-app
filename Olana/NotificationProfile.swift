@@ -912,11 +912,13 @@ class NotificationEngine: ObservableObject {
     /// Idempotent — skips if a Live Activity for this event is already running.
     func startLiveActivityNow(for event: OlanaEvent) async {
         guard #available(iOS 16.2, *) else { return }
-        // If we already have a running activity for this event, leave it alone.
-        if let existingId = liveActivityIds[event.id],
-           Activity<OlanaEventAttributes>.activities.contains(where: { $0.id == existingId }) {
-            return
-        }
+        // If a Live Activity for this event is already running, leave it alone.
+        // Check both by cached ID and by event ID directly (survives app restart).
+        let alreadyRunning = Activity<OlanaEventAttributes>.activities.contains(where: {
+            $0.attributes.eventId == event.id.uuidString ||
+            $0.id == liveActivityIds[event.id]
+        })
+        if alreadyRunning { return }
         guard NotificationProfile.profile(for: event.urgency).enableLiveActivity else { return }
         await scheduleLiveActivity(for: event)
     }
@@ -990,9 +992,13 @@ class NotificationEngine: ObservableObject {
 
     private func endLiveActivity(for eventId: UUID) async {
         guard #available(iOS 16.2, *) else { return }
-        guard let activityId = liveActivityIds[eventId] else { return }
-
-        if let activity = Activity<OlanaEventAttributes>.activities.first(where: { $0.id == activityId }) {
+        // Find by event ID directly — works even after app restart when liveActivityIds is empty.
+        let activity = Activity<OlanaEventAttributes>.activities.first(where: {
+            $0.attributes.eventId == eventId.uuidString
+        }) ?? Activity<OlanaEventAttributes>.activities.first(where: {
+            $0.id == liveActivityIds[eventId]
+        })
+        if let activity {
             let doneState = OlanaEventAttributes.ContentState(
                 eventStart:       Date(),
                 minutesRemaining: 0,
@@ -1002,7 +1008,7 @@ class NotificationEngine: ObservableObject {
                 ActivityContent(state: doneState, staleDate: nil),
                 dismissalPolicy: .immediate
             )
-            print("✅ NotificationEngine: Ended Live Activity \(activityId)")
+            print("✅ NotificationEngine: Ended Live Activity \(activity.id)")
         }
         liveActivityIds.removeValue(forKey: eventId)
     }

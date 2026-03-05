@@ -90,7 +90,8 @@ private struct OlanaLockScreenView: View {
                         .font(.title2)
                         .foregroundStyle(.green)
                 } else {
-                    Text(timerInterval: Date()...context.state.eventStart, countsDown: true)
+                    let end = max(context.state.eventStart, Date().addingTimeInterval(1))
+                    Text(timerInterval: Date()...end, countsDown: true)
                         .font(.title2.bold().monospacedDigit())
                         .foregroundStyle(color)
                 }
@@ -148,7 +149,8 @@ struct OlanaWidgetsLiveActivity: Widget {
                             .foregroundStyle(.green)
                     } else {
                         VStack(alignment: .trailing, spacing: 1) {
-                            Text(timerInterval: Date()...context.state.eventStart, countsDown: true)
+                            let end = max(context.state.eventStart, Date().addingTimeInterval(1))
+                            Text(timerInterval: Date()...end, countsDown: true)
                                 .font(.title3.bold().monospacedDigit())
                                 .foregroundStyle(urgencyColor(context.attributes.urgencyRaw))
                                 .multilineTextAlignment(.trailing)
@@ -201,7 +203,8 @@ struct OlanaWidgetsLiveActivity: Widget {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.green)
                 } else {
-                    Text(timerInterval: Date()...context.state.eventStart, countsDown: true)
+                    let end = max(context.state.eventStart, Date().addingTimeInterval(1))
+                    Text(timerInterval: Date()...end, countsDown: true)
                         .font(.system(size: 12, weight: .bold).monospacedDigit())
                         .foregroundStyle(urgencyColor(context.attributes.urgencyRaw))
                         .multilineTextAlignment(.trailing)
