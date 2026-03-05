@@ -71,8 +71,8 @@ final class EventStore: ObservableObject {
         rebuildHomeDisplayEvents()
     }
 
-    func addEvent(title: String, start: Date, end: Date, urgency: EventUrgency, recurrenceRule: RecurrenceRule = .none) {
-        let new = OlanaEvent(title: title, start: start, end: end, urgency: urgency, recurrenceRule: recurrenceRule)
+    func addEvent(title: String, start: Date, end: Date, urgency: EventUrgency, recurrenceRule: RecurrenceRule = .none, isTask: Bool = false) {
+        let new = OlanaEvent(title: title, start: start, end: end, urgency: urgency, recurrenceRule: recurrenceRule, isTask: isTask)
         context.insert(new)
         if recurrenceRule != .none {
             for occurrence in generateOccurrences(from: new, rule: recurrenceRule) {

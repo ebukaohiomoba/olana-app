@@ -70,6 +70,26 @@ class UrgencyManager: ObservableObject {
         // consistent (≥80 %) AND ML is uncertain (<80 % confidence).
         result = mlEngine.applyKNNCorrection(to: result, features: features)
 
+        // ── 3b. Score bias (immediate learning from corrections) ──────────────
+        // Derived from recent correction direction counts — no retraining needed.
+        // Shifts the effective bucket thresholds whenever the user consistently
+        // disagrees with ML in the same direction (e.g. always lowers high→medium).
+        let bias = UrgencyCorrectionStore.shared.learnedScoreAdjustment
+        if abs(bias) >= 0.15 {
+            let biasedScore  = result.score + bias
+            let biasedBucket: UrgencyBucket = biasedScore < 3.2 ? .low
+                                            : biasedScore >= 6.2 ? .high : .medium
+            if biasedBucket != result.bucket {
+                result = UrgencyClassification(
+                    bucket:        biasedBucket,
+                    score:         biasedScore,
+                    confidence:    result.confidence * 0.92,
+                    engineVersion: result.engineVersion + "+bias",
+                    rationale:     nil
+                )
+            }
+        }
+
         // ── 4. Hard overrides (unambiguous facts — not heuristics) ────────────
         if let date, date < now {
             return UrgencyClassification(
@@ -177,6 +197,8 @@ class UrgencyManager: ObservableObject {
         let now       = Date()
         let eventDate = date ?? Calendar.current.date(byAdding: .day, value: 7, to: now)!
 
+        let lowercased = text.lowercased()
+
         // TIME FEATURES (0-9)
         let hoursUntilStart = max(eventDate.timeIntervalSince(now) / 3600, 0)
         let isPastDue  = eventDate < now
@@ -184,15 +206,14 @@ class UrgencyManager: ObservableObject {
         let within72h  = hoursUntilStart < 72  && hoursUntilStart >= 0
         let within14d  = hoursUntilStart < 336 && hoursUntilStart >= 0
 
-        let calendar = Calendar.current
-        let hour     = calendar.component(.hour,    from: eventDate)
-        let weekday  = calendar.component(.weekday, from: eventDate) - 1
-        let isMorning = (6...11).contains(hour)
-        let isEvening = (17...22).contains(hour)
-        let isWeekend = [0, 6].contains(weekday)
+        let calendar          = Calendar.current
+        let hour              = calendar.component(.hour,    from: eventDate)
+        let weekday           = calendar.component(.weekday, from: eventDate) - 1
+        let hasCasualKeyword  = lowercased.containsCasualKeyword
+        let beyondTwoWeeks    = hoursUntilStart > 336   // f[7]: >14 days away
+        let isWeekend         = [0, 6].contains(weekday)
 
         // TEXT FEATURES (10-18)
-        let lowercased            = text.lowercased()
         let hasDeadlineKeyword    = lowercased.containsDeadlineKeyword
         let hasAsap               = lowercased.contains("asap")
         let hasUrgent             = lowercased.contains("urgent")
@@ -216,7 +237,7 @@ class UrgencyManager: ObservableObject {
         let hasOverlap30m      = context?.hasOverlappingEvent ?? false
         let hasDenseHour       = context?.hasDenseHour ?? false
         let travelSlack        = context?.travelSlackMinutes ?? 0.0
-        let hasTightTravel     = travelSlack < 15
+        let hasTightTravel     = hasLocation && travelSlack < 15  // only meaningful with a location
 
         // INTERACTION FEATURES (29-31)
         let deadlineAndClose   = hasDeadlineKeyword && within72h
@@ -226,7 +247,7 @@ class UrgencyManager: ObservableObject {
         return [
             hoursUntilStart,        isPastDue ? 1.0 : 0.0,   within24h ? 1.0 : 0.0,
             within72h ? 1.0 : 0.0,  within14d ? 1.0 : 0.0,   Double(hour),
-            isMorning ? 1.0 : 0.0,  isEvening ? 1.0 : 0.0,   Double(weekday),
+            hasCasualKeyword ? 1.0 : 0.0,  beyondTwoWeeks ? 1.0 : 0.0,  Double(weekday),
             isWeekend ? 1.0 : 0.0,
             hasDeadlineKeyword ? 1.0 : 0.0,  hasAsap ? 1.0 : 0.0,   hasUrgent ? 1.0 : 0.0,
             hasTentativeKeyword ? 1.0 : 0.0, hasHighStakesKeyword ? 1.0 : 0.0,
@@ -266,8 +287,15 @@ extension String {
         ["maybe", "tentative", "possibly", "might", "tbd", "to be determined"]
             .contains { lowercased().contains($0) }
     }
+    var containsCasualKeyword: Bool {
+        ["coffee", "lunch", "catch up", "browse", "errand", "walk", "read",
+         "relax", "chill", "hang out", "netflix", "movie", "game", "gym", "workout"]
+            .contains { lowercased().contains($0) }
+    }
     var containsHighStakesKeyword: Bool {
-        ["ceo", "exec", "board", "client", "presentation", "demo", "interview", "meeting"]
+        // "meeting" removed (too generic — causes false high urgency on standups)
+        ["ceo", "exec", "board", "client", "presentation", "demo", "interview",
+         "doctor", "surgery", "court", "wedding", "exam", "performance", "funeral"]
             .contains { lowercased().contains($0) }
     }
 }

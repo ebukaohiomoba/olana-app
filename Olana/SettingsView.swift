@@ -328,6 +328,84 @@ struct SettingsView: View {
                                 .padding(.vertical, 14)
                             }
                             .buttonStyle(.plain)
+
+                            Divider().padding(.leading, 66)
+
+                            // MARK: End-to-end pipeline test — schedules a real event 2 min out
+                            // This triggers: notification fallback (5s) + Live Activity + AlarmKit alarm
+                            Button {
+                                let mockEvent = OlanaEvent(
+                                    title: "⚡ End-to-End Test",
+                                    start: Date().addingTimeInterval(2 * 60),
+                                    end:   Date().addingTimeInterval(5 * 60),
+                                    urgency: .high
+                                )
+                                Task {
+                                    await NotificationEngine.shared.scheduleNotifications(for: mockEvent)
+                                    print("✅ End-to-end test: notification in ~5s · Live Activity now · Alarm in 2min")
+                                }
+                            } label: {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "bolt.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(.purple)
+                                        .frame(width: 36, height: 36)
+                                        .background(Circle().fill(Color.purple.opacity(0.12)))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Test Full Pipeline")
+                                            .font(.body)
+                                            .foregroundStyle(theme.colors.ink)
+                                        Text("Notification now · Live Activity · Alarm in 2 min")
+                                            .font(.caption)
+                                            .foregroundStyle(theme.colors.slate)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider().padding(.leading, 66)
+
+                            // MARK: AlarmKit test — fires a real alarm 30 seconds from now
+                            Button {
+                                Task {
+                                    let granted = await AlarmKitManager.shared.requestAuthorization()
+                                    guard granted else {
+                                        print("⚠️ AlarmKit: permission not granted")
+                                        return
+                                    }
+                                    let mockEvent = OlanaEvent(
+                                        title: "Test AlarmKit Alarm",
+                                        start: Date().addingTimeInterval(30),
+                                        end:   Date().addingTimeInterval(90),
+                                        urgency: .high
+                                    )
+                                    await AlarmKitManager.shared.scheduleAlarm(for: mockEvent)
+                                    print("✅ AlarmKit test alarm set — fires in 30 seconds")
+                                }
+                            } label: {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "alarm.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(.red)
+                                        .frame(width: 36, height: 36)
+                                        .background(Circle().fill(Color.red.opacity(0.12)))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Test AlarmKit Alarm")
+                                            .font(.body)
+                                            .foregroundStyle(theme.colors.ink)
+                                        Text("Fires in 30 seconds · requires real device + iOS 26")
+                                            .font(.caption)
+                                            .foregroundStyle(theme.colors.slate)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                            }
+                            .buttonStyle(.plain)
                         }
                         .padding(.top, 8)
                         #endif
@@ -340,7 +418,7 @@ struct SettingsView: View {
             .navigationTitle("My Account")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $showingNotificationSettings) {
-                NotificationSettingsView()
+                NotificationHubView()
             }
             .navigationDestination(isPresented: $showingCalendarSettings) {
                 CalendarSettingsView()
@@ -489,6 +567,12 @@ struct NotificationSettingsView: View {
                                 .tint(theme.colors.ribbon)
                         }
                         .padding(.horizontal)
+
+                        // MARK: - Alarm Alerts (AlarmKit, iOS 26+)
+                        if #available(iOS 26.0, *) {
+                            AlarmKitSettingCard()
+                                .padding(.horizontal)
+                        }
 
                         // MARK: - Advanced
                         SettingCard(
@@ -1078,6 +1162,82 @@ private struct CalendarToggleRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+}
+
+// MARK: - AlarmKit Setting Card (iOS 26+)
+
+@available(iOS 26.0, *)
+private struct AlarmKitSettingCard: View {
+    @Environment(\.olanaTheme) private var theme
+    @ObservedObject private var settings    = NotificationSettings.shared
+    @ObservedObject private var alarmKit   = AlarmKitManager.shared
+
+    var body: some View {
+        SettingCard(
+            icon: "alarm.fill",
+            iconColor: .red,
+            title: "Alarm Alerts",
+            description: "Full-screen alarms for Critical events, even on silent"
+        ) {
+            VStack(spacing: 14) {
+                // Master toggle
+                Toggle("Enable Alarm Alerts", isOn: alarmToggleBinding)
+                    .tint(theme.colors.ribbon)
+
+                // Authorization state — shown only when the toggle is on
+                if settings.urgentAlarmsEnabled {
+                    Divider()
+
+                    switch alarmKit.authorizationState {
+                    case .authorized:
+                        Label("Alarm access granted", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.green)
+
+                    case .denied:
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("Alarm access denied", systemImage: "xmark.circle.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                            Text("Go to Settings → Olana → Alarms to allow access.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                    case .notDetermined:
+                        Button {
+                            Task { await alarmKit.requestAuthorization() }
+                        } label: {
+                            Label("Allow Alarm Access", systemImage: "bell.badge.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(theme.colors.ribbon)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Descriptive footer
+                Text("Critical-urgency events will trigger a full-screen alarm at their start time, similar to the built-in Clock app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// A binding that requests AlarmKit authorization the first time the user
+    /// turns the toggle on, then falls back to the stored preference.
+    private var alarmToggleBinding: Binding<Bool> {
+        Binding(
+            get: { settings.urgentAlarmsEnabled },
+            set: { newValue in
+                settings.urgentAlarmsEnabled = newValue
+                if newValue && alarmKit.authorizationState == .notDetermined {
+                    Task { await alarmKit.requestAuthorization() }
+                }
+            }
+        )
     }
 }
 

@@ -77,7 +77,7 @@ final class MLUrgencyEngine {
               let output = try? bucketModel.prediction(from: input)
         else {
             // Score model succeeded but bucket failed — derive bucket from score
-            let fallback: UrgencyBucket = score < 3.5 ? .low : score >= 7.0 ? .high : .medium
+            let fallback: UrgencyBucket = score < 3.2 ? .low : score >= 6.2 ? .high : .medium
             return UrgencyClassification(
                 bucket: fallback, score: score, confidence: 0.55,
                 engineVersion: "score_only", rationale: nil
@@ -110,16 +110,10 @@ final class MLUrgencyEngine {
         let store = UrgencyCorrectionStore.shared
         guard store.samples.count >= 5 else { return base }
 
-        let neighbors = store.nearestNeighbors(to: features, k: 5)
-        guard !neighbors.isEmpty else { return base }
-
-        // Equal-weight vote across neighbors
-        var votes: [String: Double] = [:]
-        let weight = 1.0 / Double(neighbors.count)
-        for n in neighbors { votes[n.userChoice, default: 0] += weight }
-
+        // Weighted vote: each neighbor's influence scales with cosine similarity
+        // so closer events count more (replaces the old equal-weight majority vote).
         guard
-            let (topLabel, topStrength) = votes.max(by: { $0.value < $1.value }),
+            let (topLabel, topStrength) = store.weightedVote(for: features, k: 5),
             let knnBucket = UrgencyBucket(rawValue: topLabel),
             topStrength >= 0.80,
             base.confidence < 0.80,
@@ -127,12 +121,12 @@ final class MLUrgencyEngine {
         else { return base }
 
         print("🔀 k-NN: \(base.bucket.rawValue) → \(knnBucket.rawValue) "
-            + "(vote \(Int(topStrength * 100))%, ML conf \(Int(base.confidence * 100))%)")
+            + "(weighted vote \(Int(topStrength * 100))%, ML conf \(Int(base.confidence * 100))%)")
 
         return UrgencyClassification(
             bucket: knnBucket,
             score: scoreFromBucket(knnBucket),
-            confidence: topStrength * 0.85,   // slight discount for k-NN uncertainty
+            confidence: topStrength * 0.85,
             engineVersion: "knn_v1",
             rationale: "Based on your previous choices"
         )
@@ -191,7 +185,7 @@ final class MLUrgencyEngine {
         }
 
         // Step 3 — derive from score
-        let bucket: UrgencyBucket = fallbackScore < 3.5 ? .low : fallbackScore >= 7.0 ? .high : .medium
+        let bucket: UrgencyBucket = fallbackScore < 3.2 ? .low : fallbackScore >= 6.2 ? .high : .medium
         return (bucket, 0.55)
     }
 
@@ -220,7 +214,7 @@ final class MLUrgencyEngine {
         try? UrgencyScoreModelInput(
             hours_until_start: f[0],  is_past_due: f[1],           within_24h: f[2],
             within_72h: f[3],         within_14d: f[4],             hour_of_day: f[5],
-            is_morning: f[6],         is_evening: f[7],             day_of_week: f[8],
+            has_casual_keyword: f[6], beyond_14d: f[7],             day_of_week: f[8],
             is_weekend: f[9],         has_deadline_keyword: f[10],  has_asap: f[11],
             has_urgent: f[12],        has_tentative_keyword: f[13], has_highstakes_keyword: f[14],
             text_length: f[15],       word_count: f[16],            has_question_mark: f[17],
@@ -237,7 +231,7 @@ final class MLUrgencyEngine {
     private func makeRawBucketInput(_ f: [Double]) -> MLFeatureProvider? {
         let names = [
             "hours_until_start", "is_past_due", "within_24h", "within_72h", "within_14d",
-            "hour_of_day", "is_morning", "is_evening", "day_of_week", "is_weekend",
+            "hour_of_day", "has_casual_keyword", "beyond_14d", "day_of_week", "is_weekend",
             "has_deadline_keyword", "has_asap", "has_urgent", "has_tentative_keyword",
             "has_highstakes_keyword", "text_length", "word_count", "has_question_mark",
             "has_exclamation", "is_all_day", "has_location", "has_attendees",

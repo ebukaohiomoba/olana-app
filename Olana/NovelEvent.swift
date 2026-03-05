@@ -86,6 +86,9 @@ public final class OlanaEvent {
     public var urgencyOverrideRaw: Int? = nil    // user-set urgency, overrides auto-assign
     public var sourceModifiedAt: Date? = nil     // last-modified timestamp from source calendar
     public var syncedAt: Date? = nil             // when Olana last synced this event
+    /// True for user-created tasks (reminder with a start time only, no meaningful duration).
+    /// Always false for events imported from Google/Apple Calendar.
+    public var isTask: Bool = false
 
     /// Stable identity for SwiftUI List/ForEach.
     /// Non-recurring: uses the unique UUID string.
@@ -120,7 +123,8 @@ public final class OlanaEvent {
         notes: String? = nil,
         location: String? = nil,
         calendarName: String? = nil,
-        calendarColorHex: String? = nil
+        calendarColorHex: String? = nil,
+        isTask: Bool = false
     ) {
         self.id                 = id
         self.title              = title
@@ -137,5 +141,6 @@ public final class OlanaEvent {
         self.location           = location
         self.calendarName       = calendarName
         self.calendarColorHex   = calendarColorHex
+        self.isTask             = isTask
     }
 }

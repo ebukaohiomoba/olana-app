@@ -24,6 +24,8 @@ struct EventRowModel: Identifiable, Equatable {
     let urgency: EventUrgency
     let recurrenceRule: RecurrenceRule
     let completed: Bool
+    let isAllDay: Bool
+    let isTask: Bool
 
     /// Stable identity for ForEach. Recurring series share a key so the
     /// representative can change without causing an "Invalid update" crash.
@@ -38,6 +40,8 @@ struct EventRowModel: Identifiable, Equatable {
         urgency        = event.urgency
         recurrenceRule = event.recurrenceRule
         completed      = event.completed
+        isAllDay       = event.isAllDay
+        isTask         = event.isTask
     }
 }
 
@@ -368,6 +372,9 @@ struct HomeView: View {
                 startImminentTimerIfNeeded()
                 // Quick-sync calendar events on each foreground appearance
                 Task { await calendarManager.performQuickSync() }
+                // Catch up: start Live Activities for any events already in the lead window.
+                let events = store.events
+                Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
             }
             .onDisappear {
                 isViewVisible = false
@@ -384,6 +391,9 @@ struct HomeView: View {
                     startImminentTimerIfNeeded()
                     oluManager.updateForTimeOfDay()
                     Task { await calendarManager.performQuickSync() }
+                    // Catch up after being suspended in the background.
+                    let events = store.events
+                    Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
                 case .background, .inactive:
                     stopTimers()
                     stopImminentTimer()
@@ -399,7 +409,7 @@ struct HomeView: View {
             .sheet(isPresented: $showingAdd) {
                 AddEventView()
                     .environmentObject(store)
-                    .presentationDetents([.fraction(0.62), .large])
+                    .presentationDetents([.fraction(0.75), .large])
                     .presentationDragIndicator(.visible)
                     .presentationCornerRadius(24)
             }
@@ -540,6 +550,11 @@ struct HomeView: View {
         let leadMins  = Double(NotificationSettings.shared.liveActivityLeadMinutes)
         let lowerBound = (leadMins - 1) * 60
         let upperBound = (leadMins + 1) * 60
+
+        // On every tick, start Live Activities for any events now inside the lead window.
+        let events = store.events
+        Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
+
         for event in store.events {
             let timeUntil = event.start.timeIntervalSince(now)
             guard timeUntil >= lowerBound && timeUntil <= upperBound else { continue }
@@ -593,8 +608,17 @@ private struct EventCardRow: View {
         }
     }
 
+    private static let timeFmt: DateFormatter = {
+        let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none; return f
+    }()
+
     private var subtitleText: String {
-        "\(relativeDateLabel(for: model.start)) · \(model.urgency.displayName) urgency"
+        var parts = [relativeDateLabel(for: model.start)]
+        if !model.isAllDay {
+            parts.append(Self.timeFmt.string(from: model.start))
+        }
+        parts.append(model.urgency.displayName)
+        return parts.joined(separator: " · ")
     }
 
     private func relativeDateLabel(for date: Date) -> String {
@@ -617,11 +641,23 @@ private struct EventCardRow: View {
 
             // Title + subtitle
             VStack(alignment: .leading, spacing: 4) {
-                Text(model.title)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(theme.colors.ink)
-                    .lineLimit(1)
-                    .strikethrough(model.completed, color: .secondary)
+                HStack(spacing: 6) {
+                    Text(model.title)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(theme.colors.ink)
+                        .lineLimit(1)
+                        .strikethrough(model.completed, color: .secondary)
+
+                    Text(model.isTask ? "Task" : "Event")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.4)
+                        .foregroundStyle(model.isTask ? theme.colors.slate : theme.colors.ribbon)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill((model.isTask ? theme.colors.slate : theme.colors.ribbon).opacity(0.12))
+                        )
+                }
 
                 Text(subtitleText)
                     .font(.subheadline)

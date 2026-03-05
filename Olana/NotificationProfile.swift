@@ -12,6 +12,7 @@
 import Foundation
 import UserNotifications
 import ActivityKit
+import BackgroundTasks
 @preconcurrency import EventKit
 import Combine
 
@@ -164,10 +165,86 @@ class NotificationSettings: ObservableObject {
     @Published var urgentAlarmsEnabled: Bool {
         didSet { save(urgentAlarmsEnabled, forKey: "urgentAlarmsEnabled") }
     }
+    @Published var soonAlarmsEnabled: Bool {
+        didSet { save(soonAlarmsEnabled, forKey: "soonAlarmsEnabled") }
+    }
+    @Published var laterAlarmsEnabled: Bool {
+        didSet { save(laterAlarmsEnabled, forKey: "laterAlarmsEnabled") }
+    }
+    @Published var soonLiveActivityEnabled: Bool {
+        didSet { save(soonLiveActivityEnabled, forKey: "soonLiveActivityEnabled") }
+    }
+    @Published var laterLiveActivityEnabled: Bool {
+        didSet { save(laterLiveActivityEnabled, forKey: "laterLiveActivityEnabled") }
+    }
+    @Published var soonBypassFocusEnabled: Bool {
+        didSet { save(soonBypassFocusEnabled, forKey: "soonBypassFocusEnabled") }
+    }
+    @Published var laterBypassFocusEnabled: Bool {
+        didSet { save(laterBypassFocusEnabled, forKey: "laterBypassFocusEnabled") }
+    }
     /// How many minutes before an event the Live Activity countdown starts.
     /// Stored in iCloud KV so the value syncs across devices.
     @Published var liveActivityLeadMinutes: Int {
         didSet { save(liveActivityLeadMinutes, forKey: "liveActivityLeadMinutes") }
+    }
+
+    // MARK: New hub settings
+
+    @Published var allNotificationsEnabled: Bool {
+        didSet { save(allNotificationsEnabled, forKey: "allNotificationsEnabled") }
+    }
+    // Critical
+    @Published var countdownTimerEnabled: Bool {
+        didSet { save(countdownTimerEnabled, forKey: "countdownTimerEnabled") }
+    }
+    @Published var reAlarmEnabled: Bool {
+        didSet { save(reAlarmEnabled, forKey: "reAlarmEnabled") }
+    }
+    @Published var criticalEscalationCadence: Int {
+        didSet { save(criticalEscalationCadence, forKey: "criticalEscalationCadence") }
+    }
+    // Soon
+    @Published var morningNudgeEnabled: Bool {
+        didSet { save(morningNudgeEnabled, forKey: "morningNudgeEnabled") }
+    }
+    @Published var morningNudgeTime: Date {
+        didSet { save(morningNudgeTime as NSDate, forKey: "morningNudgeTime") }
+    }
+    @Published var afternoonNudgeEnabled: Bool {
+        didSet { save(afternoonNudgeEnabled, forKey: "afternoonNudgeEnabled") }
+    }
+    @Published var afternoonNudgeTime: Date {
+        didSet { save(afternoonNudgeTime as NSDate, forKey: "afternoonNudgeTime") }
+    }
+    @Published var soonEventCadence: Int {
+        didSet { save(soonEventCadence, forKey: "soonEventCadence") }
+    }
+    // Later
+    @Published var laterCadence: Int {
+        didSet { save(laterCadence, forKey: "laterCadence") }
+    }
+    @Published var escalateToSoonEnabled: Bool {
+        didSet { save(escalateToSoonEnabled, forKey: "escalateToSoonEnabled") }
+    }
+    @Published var escalateToCriticalEnabled: Bool {
+        didSet { save(escalateToCriticalEnabled, forKey: "escalateToCriticalEnabled") }
+    }
+    @Published var silentUntilEscalated: Bool {
+        didSet { save(silentUntilEscalated, forKey: "silentUntilEscalated") }
+    }
+    // Audio & Quiet
+    @Published var criticalExemptFromQuietHours: Bool {
+        didSet { save(criticalExemptFromQuietHours, forKey: "criticalExemptFromQuietHours") }
+    }
+    @Published var alarmKitExemptFromQuietHours: Bool {
+        didSet { save(alarmKitExemptFromQuietHours, forKey: "alarmKitExemptFromQuietHours") }
+    }
+    @Published var notificationSound: String {
+        didSet { save(notificationSound, forKey: "notificationSound") }
+    }
+    @Published var alarmKitSound: String {
+        didSet { save(alarmKitSound, forKey: "alarmKitSound") }
     }
 
     // MARK: Init
@@ -192,7 +269,34 @@ class NotificationSettings: ObservableObject {
         self.enableCalendarRedundancy   = kv.bool(  "enableCalendarRedundancy")    ?? UserDefaults.standard.object(forKey: "enableCalendarRedundancy")   as? Bool ?? false
         self.enableAudioReminders       = kv.bool(  "enableAudioReminders")        ?? UserDefaults.standard.object(forKey: "enableAudioReminders")       as? Bool ?? true
         self.urgentAlarmsEnabled        = kv.bool(  "urgentAlarmsEnabled")         ?? UserDefaults.standard.object(forKey: "urgentAlarmsEnabled")        as? Bool ?? false
+        self.soonAlarmsEnabled          = kv.bool(  "soonAlarmsEnabled")           ?? UserDefaults.standard.object(forKey: "soonAlarmsEnabled")          as? Bool ?? false
+        self.laterAlarmsEnabled         = kv.bool(  "laterAlarmsEnabled")          ?? UserDefaults.standard.object(forKey: "laterAlarmsEnabled")         as? Bool ?? false
+        self.soonLiveActivityEnabled    = kv.bool(  "soonLiveActivityEnabled")     ?? UserDefaults.standard.object(forKey: "soonLiveActivityEnabled")    as? Bool ?? true
+        self.laterLiveActivityEnabled   = kv.bool(  "laterLiveActivityEnabled")    ?? UserDefaults.standard.object(forKey: "laterLiveActivityEnabled")   as? Bool ?? false
+        self.soonBypassFocusEnabled     = kv.bool(  "soonBypassFocusEnabled")      ?? UserDefaults.standard.object(forKey: "soonBypassFocusEnabled")     as? Bool ?? false
+        self.laterBypassFocusEnabled    = kv.bool(  "laterBypassFocusEnabled")     ?? UserDefaults.standard.object(forKey: "laterBypassFocusEnabled")    as? Bool ?? false
         self.liveActivityLeadMinutes    = kv.int(   "liveActivityLeadMinutes")     ?? UserDefaults.standard.object(forKey: "liveActivityLeadMinutes")    as? Int  ?? 15
+
+        let defaultMorning   = cal.date(bySettingHour: 9,  minute: 0, second: 0, of: Date()) ?? Date()
+        let defaultAfternoon = cal.date(bySettingHour: 14, minute: 0, second: 0, of: Date()) ?? Date()
+
+        self.allNotificationsEnabled    = kv.bool("allNotificationsEnabled")    ?? UserDefaults.standard.object(forKey: "allNotificationsEnabled")    as? Bool ?? true
+        self.countdownTimerEnabled      = kv.bool("countdownTimerEnabled")      ?? UserDefaults.standard.object(forKey: "countdownTimerEnabled")      as? Bool ?? true
+        self.reAlarmEnabled             = kv.bool("reAlarmEnabled")             ?? UserDefaults.standard.object(forKey: "reAlarmEnabled")             as? Bool ?? true
+        self.criticalEscalationCadence  = kv.int( "criticalEscalationCadence") ?? UserDefaults.standard.object(forKey: "criticalEscalationCadence")  as? Int  ?? 3
+        self.morningNudgeEnabled        = kv.bool("morningNudgeEnabled")        ?? UserDefaults.standard.object(forKey: "morningNudgeEnabled")        as? Bool ?? true
+        self.morningNudgeTime           = kv.date("morningNudgeTime")           ?? UserDefaults.standard.object(forKey: "morningNudgeTime")           as? Date ?? defaultMorning
+        self.afternoonNudgeEnabled      = kv.bool("afternoonNudgeEnabled")      ?? UserDefaults.standard.object(forKey: "afternoonNudgeEnabled")      as? Bool ?? true
+        self.afternoonNudgeTime         = kv.date("afternoonNudgeTime")         ?? UserDefaults.standard.object(forKey: "afternoonNudgeTime")         as? Date ?? defaultAfternoon
+        self.soonEventCadence           = kv.int( "soonEventCadence")           ?? UserDefaults.standard.object(forKey: "soonEventCadence")           as? Int  ?? 3
+        self.laterCadence               = kv.int( "laterCadence")               ?? UserDefaults.standard.object(forKey: "laterCadence")               as? Int  ?? 2
+        self.escalateToSoonEnabled      = kv.bool("escalateToSoonEnabled")      ?? UserDefaults.standard.object(forKey: "escalateToSoonEnabled")      as? Bool ?? true
+        self.escalateToCriticalEnabled  = kv.bool("escalateToCriticalEnabled")  ?? UserDefaults.standard.object(forKey: "escalateToCriticalEnabled")  as? Bool ?? true
+        self.silentUntilEscalated       = kv.bool("silentUntilEscalated")       ?? UserDefaults.standard.object(forKey: "silentUntilEscalated")       as? Bool ?? true
+        self.criticalExemptFromQuietHours  = kv.bool("criticalExemptFromQuietHours")  ?? UserDefaults.standard.object(forKey: "criticalExemptFromQuietHours")  as? Bool ?? true
+        self.alarmKitExemptFromQuietHours  = kv.bool("alarmKitExemptFromQuietHours")  ?? UserDefaults.standard.object(forKey: "alarmKitExemptFromQuietHours")  as? Bool ?? true
+        self.notificationSound          = kv.object(forKey: "notificationSound") as? String ?? UserDefaults.standard.string(forKey: "notificationSound") ?? "olu_chime"
+        self.alarmKitSound              = kv.object(forKey: "alarmKitSound")     as? String ?? UserDefaults.standard.string(forKey: "alarmKitSound")     ?? "gentle_rise"
 
         // Observe external changes pushed from other devices via iCloud.
         NotificationCenter.default.addObserver(
@@ -251,8 +355,54 @@ class NotificationSettings: ObservableObject {
                     if let v = self.kv.bool("enableAudioReminders")       { self.enableAudioReminders = v }
                 case "urgentAlarmsEnabled":
                     if let v = self.kv.bool("urgentAlarmsEnabled")        { self.urgentAlarmsEnabled = v }
+                case "soonAlarmsEnabled":
+                    if let v = self.kv.bool("soonAlarmsEnabled")          { self.soonAlarmsEnabled = v }
+                case "laterAlarmsEnabled":
+                    if let v = self.kv.bool("laterAlarmsEnabled")         { self.laterAlarmsEnabled = v }
+                case "soonLiveActivityEnabled":
+                    if let v = self.kv.bool("soonLiveActivityEnabled")    { self.soonLiveActivityEnabled = v }
+                case "laterLiveActivityEnabled":
+                    if let v = self.kv.bool("laterLiveActivityEnabled")   { self.laterLiveActivityEnabled = v }
+                case "soonBypassFocusEnabled":
+                    if let v = self.kv.bool("soonBypassFocusEnabled")     { self.soonBypassFocusEnabled = v }
+                case "laterBypassFocusEnabled":
+                    if let v = self.kv.bool("laterBypassFocusEnabled")    { self.laterBypassFocusEnabled = v }
                 case "liveActivityLeadMinutes":
-                    if let v = self.kv.int("liveActivityLeadMinutes")     { self.liveActivityLeadMinutes = v }
+                    if let v = self.kv.int("liveActivityLeadMinutes")          { self.liveActivityLeadMinutes = v }
+                case "allNotificationsEnabled":
+                    if let v = self.kv.bool("allNotificationsEnabled")         { self.allNotificationsEnabled = v }
+                case "countdownTimerEnabled":
+                    if let v = self.kv.bool("countdownTimerEnabled")           { self.countdownTimerEnabled = v }
+                case "reAlarmEnabled":
+                    if let v = self.kv.bool("reAlarmEnabled")                  { self.reAlarmEnabled = v }
+                case "criticalEscalationCadence":
+                    if let v = self.kv.int("criticalEscalationCadence")        { self.criticalEscalationCadence = v }
+                case "morningNudgeEnabled":
+                    if let v = self.kv.bool("morningNudgeEnabled")             { self.morningNudgeEnabled = v }
+                case "morningNudgeTime":
+                    if let v = self.kv.date("morningNudgeTime")                { self.morningNudgeTime = v }
+                case "afternoonNudgeEnabled":
+                    if let v = self.kv.bool("afternoonNudgeEnabled")           { self.afternoonNudgeEnabled = v }
+                case "afternoonNudgeTime":
+                    if let v = self.kv.date("afternoonNudgeTime")              { self.afternoonNudgeTime = v }
+                case "soonEventCadence":
+                    if let v = self.kv.int("soonEventCadence")                 { self.soonEventCadence = v }
+                case "laterCadence":
+                    if let v = self.kv.int("laterCadence")                     { self.laterCadence = v }
+                case "escalateToSoonEnabled":
+                    if let v = self.kv.bool("escalateToSoonEnabled")           { self.escalateToSoonEnabled = v }
+                case "escalateToCriticalEnabled":
+                    if let v = self.kv.bool("escalateToCriticalEnabled")       { self.escalateToCriticalEnabled = v }
+                case "silentUntilEscalated":
+                    if let v = self.kv.bool("silentUntilEscalated")            { self.silentUntilEscalated = v }
+                case "criticalExemptFromQuietHours":
+                    if let v = self.kv.bool("criticalExemptFromQuietHours")    { self.criticalExemptFromQuietHours = v }
+                case "alarmKitExemptFromQuietHours":
+                    if let v = self.kv.bool("alarmKitExemptFromQuietHours")    { self.alarmKitExemptFromQuietHours = v }
+                case "notificationSound":
+                    if let v = self.kv.object(forKey: "notificationSound") as? String { self.notificationSound = v }
+                case "alarmKitSound":
+                    if let v = self.kv.object(forKey: "alarmKitSound") as? String     { self.alarmKitSound = v }
                 default:
                     break
                 }
@@ -300,6 +450,15 @@ struct ScheduledNotificationRecord: Codable {
         self.eventStartTime  = eventStartTime
         self.engineVersion   = "2.0"
     }
+}
+
+// MARK: - Cached Event Record (persists across app restarts for background Live Activity)
+
+struct CachedEventRecord: Codable {
+    let id: UUID
+    let title: String
+    let start: Date
+    let urgencyRaw: Int   // 0=low, 1=medium, 2=high — mirrors EventUrgency.rawValue
 }
 
 // MARK: - Notification Engine
@@ -351,10 +510,11 @@ class NotificationEngine: ObservableObject {
     // MARK: - Notification Categories
 
     func setupNotificationCategories() {
+        func snoozeLabel(_ m: Int) -> String { m < 60 ? "Snooze \(m)m" : "Snooze \(m / 60)h" }
         let markDone     = UNNotificationAction(identifier: "MARK_DONE",     title: "Mark Done",  options: [.foreground])
-        let snoozeLow    = UNNotificationAction(identifier: "SNOOZE_LOW",    title: "Snooze 30m", options: [])
-        let snoozeMedium = UNNotificationAction(identifier: "SNOOZE_MEDIUM", title: "Snooze 15m", options: [])
-        let snoozeHigh   = UNNotificationAction(identifier: "SNOOZE_HIGH",   title: "Snooze 10m", options: [])
+        let snoozeLow    = UNNotificationAction(identifier: "SNOOZE_LOW",    title: snoozeLabel(settings.lowUrgencySnoozeMinutes),    options: [])
+        let snoozeMedium = UNNotificationAction(identifier: "SNOOZE_MEDIUM", title: snoozeLabel(settings.mediumUrgencySnoozeMinutes), options: [])
+        let snoozeHigh   = UNNotificationAction(identifier: "SNOOZE_HIGH",   title: snoozeLabel(settings.highUrgencySnoozeMinutes),   options: [])
 
         center.setNotificationCategories([
             UNNotificationCategory(identifier: "EVENT_LOW",    actions: [markDone, snoozeLow],    intentIdentifiers: [], options: []),
@@ -366,14 +526,22 @@ class NotificationEngine: ObservableObject {
     // MARK: - Schedule Notifications
 
     func scheduleNotifications(for event: OlanaEvent, confidence: Double = 1.0) async {
-        guard isAuthorized else { return }
+        // Re-register categories so snooze button labels always reflect current settings.
+        setupNotificationCategories()
+        guard isAuthorized, settings.allNotificationsEnabled else { return }
+
+        // Later tasks with "silent until escalated" skip scheduling entirely.
+        if event.urgency == .low && settings.silentUntilEscalated { return }
 
         await cancelNotifications(for: event.id)
 
         let profile = NotificationProfile.profile(for: event.urgency)
+
+        // Use cadence/nudge settings to build timings instead of static profile arrays.
+        let timingsToUse = timingsForEvent(event, profile: profile)
         var candidatePairs: [(date: Date, timing: NotificationProfile.NotificationTiming)] = []
 
-        for timing in profile.timings {
+        for timing in timingsToUse {
             var candidateDate: Date?
 
             if timing.daysBefore > 0, let specificTime = timing.specificTime {
@@ -422,9 +590,13 @@ class NotificationEngine: ObservableObject {
                                timing: NotificationProfile.NotificationTiming(minutesBefore: 0))]
         }
 
-        // Critical events always break through — quiet hours don't delay them.
-        // Medium and low urgency events respect the user's quiet window.
-        if profile.urgency != .high {
+        // Respect quiet hours unless the urgency tier is configured to be exempt.
+        let exemptFromQuiet: Bool
+        switch profile.urgency {
+        case .high:        exemptFromQuiet = settings.criticalExemptFromQuietHours
+        case .medium, .low: exemptFromQuiet = false
+        }
+        if !exemptFromQuiet {
             candidatePairs = candidatePairs.map { (normalizeForQuietHours($0.date), $0.timing) }
         }
         candidatePairs = deduplicatePairs(candidatePairs, tolerance: 60)
@@ -448,12 +620,10 @@ class NotificationEngine: ObservableObject {
             content.title               = event.title
             content.subtitle            = subtitleForTiming(pair.timing)
             content.body                = bodyForUrgency(event.urgency, eventStart: event.start, timing: pair.timing)
-            content.sound               = settings.enableAudioReminders ? profile.sound : nil
+            content.sound               = resolvedSound(for: profile)
             content.threadIdentifier    = event.id.uuidString
             content.categoryIdentifier  = "EVENT_\(urgencyString(event.urgency).uppercased())"
-            content.interruptionLevel   = profile.interruptionLevel
-            // Critical (.high) events always use .timeSensitive — set directly in the profile.
-            // Requires the "Time Sensitive Notifications" entitlement in Xcode Signing & Capabilities.
+            content.interruptionLevel   = resolvedInterruptionLevel(for: profile)
             content.userInfo            = [
                 "eventId":           event.id.uuidString,
                 "urgency":           event.urgency.rawValue,
@@ -483,6 +653,11 @@ class NotificationEngine: ObservableObject {
         )
         scheduledRecords[event.id] = record
         saveRecords()
+        updateUpcomingCache(add: event)
+        // Schedule a background wakeup so Live Activity can start even if the app is suspended.
+        if event.start.timeIntervalSinceNow < 24 * 3600 {
+            NotificationEngine.scheduleLiveActivityCheck()
+        }
 
         if profile.enableLiveActivity {
             await scheduleLiveActivity(for: event)
@@ -490,6 +665,21 @@ class NotificationEngine: ObservableObject {
 
         if settings.enableCalendarRedundancy {
             await addCalendarAlarm(for: event)
+        }
+
+        // AlarmKit: schedule a full-screen alarm based on per-urgency setting.
+        let alarmKitEnabled: Bool
+        switch event.urgency {
+        case .high:   alarmKitEnabled = settings.urgentAlarmsEnabled
+        case .medium: alarmKitEnabled = settings.soonAlarmsEnabled
+        case .low:    alarmKitEnabled = settings.laterAlarmsEnabled
+        }
+        // Skip alarm if event falls in quiet hours and the user hasn't exempted alarms.
+        let alarmBlockedByQuiet = settings.quietHoursEnabled
+            && isInQuietHours(event.start)
+            && !settings.alarmKitExemptFromQuietHours
+        if alarmKitEnabled && !alarmBlockedByQuiet {
+            await AlarmKitManager.shared.scheduleAlarm(for: event)
         }
     }
 
@@ -500,7 +690,9 @@ class NotificationEngine: ObservableObject {
         center.removePendingNotificationRequests(withIdentifiers: record.notificationIds)
         scheduledRecords.removeValue(forKey: eventId)
         saveRecords()
+        removeFromUpcomingCache(eventId: eventId)
         await endLiveActivity(for: eventId)
+        await AlarmKitManager.shared.cancelAlarm(for: eventId)
     }
 
     func cancelAllNotifications() async {
@@ -531,10 +723,10 @@ class NotificationEngine: ObservableObject {
         content.title              = event.title
         content.subtitle           = "Snoozed reminder"
         content.body               = "Starts at \(startTime). You asked for a nudge."
-        content.sound              = settings.enableAudioReminders ? profile.sound : nil
+        content.sound              = resolvedSound(for: profile)
         content.threadIdentifier   = event.id.uuidString
         content.categoryIdentifier = "EVENT_\(urgencyString(event.urgency).uppercased())"
-        content.interruptionLevel  = profile.interruptionLevel
+        content.interruptionLevel  = resolvedInterruptionLevel(for: profile)
         content.userInfo           = [
             "eventId": event.id.uuidString,
             "urgency": event.urgency.rawValue,
@@ -560,6 +752,15 @@ class NotificationEngine: ObservableObject {
             )
             saveRecords()
             print("✅ NotificationEngine: Snoozed '\(event.title)' for \(snoozeMinutes)m → fires at \(snoozeDate)")
+
+            // Re-alarm: schedule an AlarmKit alarm at snooze wake time for Critical events.
+            if event.urgency == .high && settings.reAlarmEnabled {
+                await AlarmKitManager.shared.scheduleReAlarm(
+                    eventId: event.id,
+                    title:   event.title,
+                    at:      snoozeDate
+                )
+            }
         } catch {
             print("❌ NotificationEngine: Failed to schedule snooze: \(error)")
         }
@@ -615,18 +816,135 @@ class NotificationEngine: ObservableObject {
         )
     }
 
+    // MARK: - Upcoming Event Cache (for background Live Activity)
+
+    private let upcomingCacheKey = "olana_upcoming_events_v1"
+
+    private func loadUpcomingCache() -> [String: CachedEventRecord] {
+        guard let data    = UserDefaults.standard.data(forKey: upcomingCacheKey),
+              let decoded = try? JSONDecoder().decode([String: CachedEventRecord].self, from: data)
+        else { return [:] }
+        return decoded
+    }
+
+    private func saveUpcomingCache(_ cache: [String: CachedEventRecord]) {
+        if let data = try? JSONEncoder().encode(cache) {
+            UserDefaults.standard.set(data, forKey: upcomingCacheKey)
+        }
+    }
+
+    private func updateUpcomingCache(add event: OlanaEvent) {
+        var cache = loadUpcomingCache()
+        cache[event.id.uuidString] = CachedEventRecord(
+            id: event.id, title: event.title,
+            start: event.start, urgencyRaw: event.urgency.rawValue
+        )
+        // Prune events that have already passed
+        let now = Date()
+        cache = cache.filter { $0.value.start > now }
+        saveUpcomingCache(cache)
+    }
+
+    private func removeFromUpcomingCache(eventId: UUID) {
+        var cache = loadUpcomingCache()
+        cache.removeValue(forKey: eventId.uuidString)
+        saveUpcomingCache(cache)
+    }
+
+    /// Start Live Activities for cached upcoming events that are inside the lead window.
+    /// Called by the BGAppRefreshTask so the countdown starts even when the app is suspended.
+    func startLiveActivitiesFromCache() {
+        guard #available(iOS 16.2, *) else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let now        = Date()
+        let leadWindow = Double(settings.liveActivityLeadMinutes) * 60
+        for (_, record) in loadUpcomingCache() {
+            let timeUntil = record.start.timeIntervalSince(now)
+            guard timeUntil > 0 && timeUntil <= leadWindow else { continue }
+
+            // Respect per-urgency Live Activity toggle
+            let enabled: Bool
+            switch record.urgencyRaw {
+            case 2:  enabled = settings.countdownTimerEnabled
+            case 1:  enabled = settings.soonLiveActivityEnabled
+            default: enabled = settings.laterLiveActivityEnabled
+            }
+            guard enabled else { continue }
+
+            // Skip if already running for this event
+            if Activity<OlanaEventAttributes>.activities.contains(where: { $0.attributes.eventId == record.id.uuidString }) {
+                continue
+            }
+
+            let attributes = OlanaEventAttributes(
+                eventId: record.id.uuidString, eventTitle: record.title, urgencyRaw: record.urgencyRaw
+            )
+            let state = OlanaEventAttributes.ContentState(
+                eventStart: record.start,
+                minutesRemaining: max(0, Int(timeUntil / 60)),
+                status: "upcoming"
+            )
+            do {
+                let activity = try Activity<OlanaEventAttributes>.request(
+                    attributes: attributes,
+                    content: ActivityContent(state: state, staleDate: record.start.addingTimeInterval(300)),
+                    pushType: nil
+                )
+                liveActivityIds[record.id] = activity.id
+                print("✅ NotificationEngine: Background Live Activity started for '\(record.title)'")
+            } catch {
+                print("❌ NotificationEngine: Background Live Activity failed — \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Schedule a BGAppRefreshTask to wake the app before the next imminent event.
+    /// Safe to call repeatedly — submitting a duplicate identifier replaces the previous request.
+    static func scheduleLiveActivityCheck() {
+        let request = BGAppRefreshTaskRequest(identifier: "com.olana.liveActivityCheck")
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 5 * 60) // no sooner than 5 min
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
     // MARK: - Live Activity
 
-    /// Called by HomeView's imminent timer when an event enters the 15-minute window
-    /// while the app is in the foreground. Safe to call multiple times — duplicate
-    /// activity requests are silently ignored.
+    /// Called by HomeView's imminent timer when an event enters the lead window.
+    /// Idempotent — skips if a Live Activity for this event is already running.
     func startLiveActivityNow(for event: OlanaEvent) async {
+        guard #available(iOS 16.2, *) else { return }
+        // If we already have a running activity for this event, leave it alone.
+        if let existingId = liveActivityIds[event.id],
+           Activity<OlanaEventAttributes>.activities.contains(where: { $0.id == existingId }) {
+            return
+        }
         guard NotificationProfile.profile(for: event.urgency).enableLiveActivity else { return }
         await scheduleLiveActivity(for: event)
     }
 
+    /// Sweeps all supplied events and starts a Live Activity for every one that is
+    /// currently within the user-configured lead window and doesn't already have one
+    /// running. Call on foreground / appear so the app catches up after being suspended.
+    func startLiveActivitiesIfNeeded(for events: [OlanaEvent]) async {
+        guard #available(iOS 16.2, *) else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let now        = Date()
+        let leadWindow = Double(settings.liveActivityLeadMinutes) * 60
+        for event in events where !event.completed {
+            let timeUntil = event.start.timeIntervalSince(now)
+            guard timeUntil > 0 && timeUntil <= leadWindow else { continue }
+            await startLiveActivityNow(for: event)
+        }
+    }
+
     private func scheduleLiveActivity(for event: OlanaEvent) async {
         guard #available(iOS 16.2, *) else { return }
+        let liveActivityEnabled: Bool
+        switch event.urgency {
+        case .high:   liveActivityEnabled = settings.countdownTimerEnabled
+        case .medium: liveActivityEnabled = settings.soonLiveActivityEnabled
+        case .low:    liveActivityEnabled = settings.laterLiveActivityEnabled
+        }
+        guard liveActivityEnabled else { return }
 
         let timeUntilEvent = event.start.timeIntervalSince(Date())
         let leadWindow     = Double(settings.liveActivityLeadMinutes) * 60
@@ -728,6 +1046,16 @@ class NotificationEngine: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    private func isInQuietHours(_ date: Date) -> Bool {
+        guard settings.quietHoursEnabled else { return false }
+        let hour           = calendar.component(.hour, from: date)
+        let quietStartHour = calendar.component(.hour, from: settings.quietHoursStart)
+        let quietEndHour   = calendar.component(.hour, from: settings.quietHoursEnd)
+        return quietStartHour > quietEndHour
+            ? (hour >= quietStartHour || hour < quietEndHour)
+            : (hour >= quietStartHour && hour < quietEndHour)
+    }
 
     private func normalizeForQuietHours(_ date: Date) -> Date {
         guard settings.quietHoursEnabled else { return date }
@@ -842,6 +1170,88 @@ class NotificationEngine: ObservableObject {
         }
     }
 #endif
+
+    // MARK: - Settings-Driven Scheduling Helpers
+
+    /// Build notification timings from user cadence/nudge settings instead of static profile arrays.
+    private func timingsForEvent(_ event: OlanaEvent, profile: NotificationProfile) -> [NotificationProfile.NotificationTiming] {
+        switch event.urgency {
+        case .high:   return criticalTimings(cadence: settings.criticalEscalationCadence)
+        case .medium: return soonTimings(event: event, cadence: settings.soonEventCadence)
+        case .low:    return laterTimings(cadence: settings.laterCadence)
+        }
+    }
+
+    /// Critical: cadence 1 = only 10 min before; each step adds an earlier reminder.
+    private func criticalTimings(cadence: Int) -> [NotificationProfile.NotificationTiming] {
+        let all: [NotificationProfile.NotificationTiming] = [
+            .init(minutesBefore: 0, specificTime: (18, 0), daysBefore: 1), // evening before
+            .init(minutesBefore: 240),  // 4 hrs
+            .init(minutesBefore: 120),  // 2 hrs
+            .init(minutesBefore: 30),   // 30 min
+            .init(minutesBefore: 10)    // 10 min (always included at cadence 1)
+        ]
+        return Array(all.suffix(min(max(cadence, 1), all.count)))
+    }
+
+    /// Soon: cadence 1 = day-before only; each step adds a closer reminder.
+    /// Morning/afternoon nudges are appended based on user toggles.
+    private func soonTimings(event: OlanaEvent, cadence: Int) -> [NotificationProfile.NotificationTiming] {
+        let all: [NotificationProfile.NotificationTiming] = [
+            .init(minutesBefore: 0, specificTime: (18, 0), daysBefore: 1), // evening before
+            .init(minutesBefore: 120),  // 2 hrs
+            .init(minutesBefore: 30),   // 30 min
+            .init(minutesBefore: 15),   // 15 min
+            .init(minutesBefore: 0)     // at time
+        ]
+        var timings = Array(all.suffix(min(max(cadence, 1), all.count)))
+
+        // Morning nudge fires at the user's configured time on the event's day.
+        if settings.morningNudgeEnabled {
+            let h = calendar.component(.hour,   from: settings.morningNudgeTime)
+            let m = calendar.component(.minute, from: settings.morningNudgeTime)
+            timings.append(.init(minutesBefore: 0, specificTime: (h, m)))
+        }
+        // Afternoon nudge fires at the user's configured time on the event's day.
+        if settings.afternoonNudgeEnabled {
+            let h = calendar.component(.hour,   from: settings.afternoonNudgeTime)
+            let m = calendar.component(.minute, from: settings.afternoonNudgeTime)
+            timings.append(.init(minutesBefore: 0, specificTime: (h, m)))
+        }
+        return timings
+    }
+
+    /// Later: cadence 1 = farthest reminder only; each step adds a closer one.
+    private func laterTimings(cadence: Int) -> [NotificationProfile.NotificationTiming] {
+        let all: [NotificationProfile.NotificationTiming] = [
+            .init(minutesBefore: 0, specificTime: (8, 0), daysBefore: 7),  // 1 week before
+            .init(minutesBefore: 0, specificTime: (8, 0), daysBefore: 3),  // 3 days before
+            .init(minutesBefore: 0, specificTime: (8, 0), daysBefore: 1),  // day before
+            .init(minutesBefore: 120),  // 2 hrs before
+            .init(minutesBefore: 0)     // at time
+        ]
+        return Array(all.suffix(min(max(cadence, 1), all.count)))
+    }
+
+    /// Notification sound from user's selection. Later (low urgency) stays silent regardless.
+    private func resolvedSound(for profile: NotificationProfile) -> UNNotificationSound? {
+        guard profile.sound != nil else { return nil }
+        switch settings.notificationSound {
+        case "none": return nil
+        default:
+            let name = UNNotificationSoundName(rawValue: "\(settings.notificationSound).m4a")
+            return UNNotificationSound(named: name)
+        }
+    }
+
+    /// Interruption level — respects each tier's "Bypass Focus" toggle.
+    private func resolvedInterruptionLevel(for profile: NotificationProfile) -> UNNotificationInterruptionLevel {
+        switch profile.urgency {
+        case .high:   return settings.allowTimeSensitiveHigh    ? .timeSensitive : .active
+        case .medium: return settings.soonBypassFocusEnabled    ? .timeSensitive : .active
+        case .low:    return settings.laterBypassFocusEnabled   ? .timeSensitive : .active
+        }
+    }
 
     private func urgencyString(_ urgency: EventUrgency) -> String {
         switch urgency {

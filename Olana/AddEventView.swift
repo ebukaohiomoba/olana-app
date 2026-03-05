@@ -44,6 +44,10 @@ struct AddEventView: View {
     // ── Pickers ───────────────────────────────────────────────────────
     @State private var showDatePicker = false
     @State private var showTimePicker = false
+    @State private var isEventMode: Bool = false
+    @State private var selectedEndDate: Date? = nil
+    @State private var extractedEndDate: Date? = nil
+    @State private var showEndTimePicker = false
 
     // ── Speech ────────────────────────────────────────────────────────
     @State private var isRecording = false
@@ -183,6 +187,9 @@ struct AddEventView: View {
                             .foregroundStyle(Color(hex: "1A0F00"))
                     }
 
+                    // Task / Event toggle
+                    taskEventToggle
+
                     // Text input card
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top, spacing: 8) {
@@ -222,7 +229,7 @@ struct AddEventView: View {
                                 }
                                 .buttonStyle(.plain)
 
-                                // Time chip
+                                // Start time chip
                                 Button { showTimePicker = true } label: {
                                     tokenChip(
                                         label: date.formatted(.dateTime.hour().minute()),
@@ -231,11 +238,24 @@ struct AddEventView: View {
                                 }
                                 .buttonStyle(.plain)
 
-                                // Clear
+                                // End time chip — shown when NLP or user has set one
+                                if let endDate = activeEndDate {
+                                    Button { showEndTimePicker = true } label: {
+                                        tokenChip(
+                                            label: endDate.formatted(.dateTime.hour().minute()),
+                                            icon: "🕑"
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                // Clear all
                                 Button {
                                     withAnimation(.spring(response: 0.25)) {
                                         selectedDate = nil
                                         extractedDate = nil
+                                        selectedEndDate = nil
+                                        extractedEndDate = nil
                                     }
                                 } label: {
                                     Image(systemName: "xmark")
@@ -274,18 +294,59 @@ struct AddEventView: View {
                         }
                     }
 
-                    // Quick time
-                    HStack(alignment: .center, spacing: 12) {
-                        Text("TIME")
-                            .font(.system(size: 11, weight: .semibold))
-                            .tracking(1.2)
-                            .foregroundStyle(Color(hex: "A07850"))
-                            .frame(width: 40, alignment: .leading)
+                    // Time row — task mode unchanged / event mode split into START + END
+                    if !isEventMode {
+                        // ── Task mode: TIME row, pixel-perfect original ──────────────
+                        HStack(alignment: .center, spacing: 12) {
+                            Text("TIME")
+                                .font(.system(size: 11, weight: .semibold))
+                                .tracking(1.2)
+                                .foregroundStyle(Color(hex: "A07850"))
+                                .frame(width: 40, alignment: .leading)
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(quickTimes, id: \.hour) { item in
-                                    quickTimeChip(item: item)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(quickTimes, id: \.hour) { item in
+                                        quickTimeChip(item: item)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // ── Event mode: START chips + END single-pill ────────────────
+                        VStack(alignment: .leading, spacing: 10) {
+
+                            // START — same quick chips, no frame constraint on label
+                            HStack(alignment: .center, spacing: 12) {
+                                Text("START")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .tracking(1.2)
+                                    .foregroundStyle(Color(hex: "A07850"))
+                                    .fixedSize()
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(quickTimes, id: \.hour) { item in
+                                            quickTimeChip(item: item)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // END — same chips as START row
+                            HStack(alignment: .center, spacing: 12) {
+                                Text("END")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .tracking(1.2)
+                                    .foregroundStyle(Color(hex: "A07850"))
+                                    .fixedSize()
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(quickTimes, id: \.hour) { item in
+                                            quickEndTimeChip(item: item)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -322,6 +383,17 @@ struct AddEventView: View {
         }
         .sheet(isPresented: $showDatePicker) { datePickerSheet }
         .sheet(isPresented: $showTimePicker) { timePickerSheet }
+        .sheet(isPresented: $showEndTimePicker) { endTimePickerSheet }
+        .onChange(of: isEventMode) { _, newValue in
+            // Only pre-fill end time when we already know the start.
+            // Using Date() as a fallback produces a stale "now + 1hr" that
+            // persists and overrides later NLP-detected times.
+            guard newValue,
+                  selectedEndDate == nil,
+                  extractedEndDate == nil,
+                  let knownStart = activeDate else { return }
+            selectedEndDate = knownStart.addingTimeInterval(3600)
+        }
     }
 
     // MARK: - NLP Token Chip
@@ -403,6 +475,64 @@ struct AddEventView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - End Time Chip
+
+    private func quickEndTimeChip(item: (label: String, hour: Int)) -> some View {
+        let currentHour = activeEndDate.map { Calendar.current.component(.hour, from: $0) }
+        let isSelected  = currentHour == item.hour
+
+        return Button {
+            let base    = activeDate ?? Date()
+            let newDate = Calendar.current.date(bySettingHour: item.hour, minute: 0, second: 0, of: base) ?? base
+            withAnimation(.spring(response: 0.25)) { selectedEndDate = newDate }
+        } label: {
+            Text(item.label)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isSelected ? .white : Color(hex: "1A0F00"))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(isSelected ? theme.colors.ribbon : Color.white))
+                .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Task / Event Toggle
+
+    private var taskEventToggle: some View {
+        HStack(spacing: 0) {
+            toggleSegment(label: "Task", icon: "checkmark.circle", isSelected: !isEventMode) {
+                withAnimation(.spring(response: 0.25)) { isEventMode = false }
+            }
+            toggleSegment(label: "Event", icon: "calendar", isSelected: isEventMode) {
+                withAnimation(.spring(response: 0.25)) { isEventMode = true }
+            }
+        }
+        .padding(3)
+        .background(Color(hex: "EDE0C8"))
+        .clipShape(Capsule())
+    }
+
+    private func toggleSegment(label: String, icon: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                Text(label)
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(isSelected ? Color(hex: "1A0F00") : Color(hex: "A07850"))
+            .padding(.vertical, 8)
+            .padding(.horizontal, 20)
+            .background(
+                Capsule()
+                    .fill(isSelected ? Color.white : Color.clear)
+                    .shadow(color: .black.opacity(isSelected ? 0.07 : 0), radius: 4, x: 0, y: 2)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Date / Time Picker Sheets
 
     private var datePickerSheet: some View {
@@ -449,6 +579,32 @@ struct AddEventView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showTimePicker = false }
+                        .foregroundStyle(theme.colors.ribbon)
+                }
+            }
+        }
+        .presentationDetents([.height(300)])
+    }
+
+    private var endTimePickerSheet: some View {
+        NavigationStack {
+            DatePicker(
+                "End Time",
+                selection: Binding(
+                    get: { selectedEndDate ?? (activeDate ?? Date()).addingTimeInterval(3600) },
+                    set: { selectedEndDate = $0 }
+                ),
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.wheel)
+            .tint(theme.colors.ribbon)
+            .labelsHidden()
+            .padding()
+            .navigationTitle("Pick end time")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showEndTimePicker = false }
                         .foregroundStyle(theme.colors.ribbon)
                 }
             }
@@ -533,6 +689,19 @@ struct AddEventView: View {
                 .padding(.vertical, 6)
                 .background(Color(hex: "F5EDD8"))
                 .clipShape(Capsule())
+
+                if isEventMode {
+                    Label(
+                        finalEndDateForSave.formatted(.dateTime.hour().minute()),
+                        systemImage: "arrow.right"
+                    )
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color(hex: "3B1F0A"))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color(hex: "F5EDD8"))
+                    .clipShape(Capsule())
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -668,6 +837,9 @@ struct AddEventView: View {
     /// The active date shown in chips and used by quick-date/time taps
     private var activeDate: Date? { selectedDate ?? extractedDate }
 
+    /// The active end date shown in the end-time chip
+    private var activeEndDate: Date? { selectedEndDate ?? extractedEndDate }
+
     /// Currently selected hour (for highlighting quick-time chips)
     private var activeHour: Int? {
         activeDate.map { Calendar.current.component(.hour, from: $0) }
@@ -680,6 +852,11 @@ struct AddEventView: View {
     private var resolvedUrgency: EventUrgency { userSelectedUrgency ?? mlUrgency }
 
     private var finalDateForSave: Date { selectedDate ?? extractedDate ?? Date() }
+
+    private var finalEndDateForSave: Date {
+        guard isEventMode else { return finalDateForSave }
+        return selectedEndDate ?? extractedEndDate ?? finalDateForSave.addingTimeInterval(3600)
+    }
 
     private func urgencyFromBucket(_ bucket: UrgencyBucket) -> EventUrgency {
         switch bucket {
@@ -741,8 +918,15 @@ struct AddEventView: View {
         analysisTask = Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled else { return }
-            if let date = await extractDateFromText(newValue) {
-                await MainActor.run { extractedDate = date }
+            let (start, end) = await extractDateRangeFromText(newValue)
+            let recurrence   = extractRecurrenceFromText(newValue)
+            await MainActor.run {
+                if let s = start { extractedDate = s }
+                if let e = end {
+                    extractedEndDate = e
+                    isEventMode = true   // NLP found a range → switch to Event mode
+                }
+                if recurrence != .none { selectedRecurrence = recurrence }
             }
         }
     }
@@ -759,8 +943,18 @@ struct AddEventView: View {
                 UrgencyManager.shared.classify(text: text, date: dateHint)
             }.value
 
-            if selectedDate == nil {
-                extractedDate = await extractDateFromText(text)
+            if selectedDate == nil || (selectedEndDate == nil && extractedEndDate == nil) {
+                let (start, end) = await extractDateRangeFromText(text)
+                if selectedDate == nil, let s = start { extractedDate = s }
+                if selectedEndDate == nil && extractedEndDate == nil, let e = end {
+                    extractedEndDate = e
+                    isEventMode = true
+                }
+            }
+            // Auto-set recurrence if detected and not already chosen by the user.
+            let recurrence = extractRecurrenceFromText(text)
+            if recurrence != .none && selectedRecurrence == .none {
+                selectedRecurrence = recurrence
             }
             let title = extractTitle(from: text)
 
@@ -777,11 +971,12 @@ struct AddEventView: View {
         let finalUrgency = resolvedUrgency
         let title    = editedTitle.isEmpty ? extractTitle(from: eventText) : editedTitle
         let date     = finalDateForSave
-        let endDate  = Calendar.current.date(byAdding: .hour, value: 1, to: date) ?? date
+        let endDate  = finalEndDateForSave
 
         store.addEvent(
             title: title, start: date, end: endDate,
-            urgency: finalUrgency, recurrenceRule: selectedRecurrence
+            urgency: finalUrgency, recurrenceRule: selectedRecurrence,
+            isTask: !isEventMode
         )
 
         if let classification = mlClassification {
@@ -797,45 +992,127 @@ struct AddEventView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { dismiss() }
     }
 
-    // MARK: - Date Extraction
+    // MARK: - Date / Range Extraction
 
-    private func extractDateFromText(_ text: String) async -> Date? {
+    /// Hybrid extraction: NSDataDetector for start time (and range when unambiguous),
+    /// regex fallback for end time when NSDataDetector reads "3 to 5" as a date range.
+    /// Falls back to relative-offset patterns for "in 30 minutes" / "2 hours from now".
+    private func extractDateRangeFromText(_ text: String) async -> (start: Date?, end: Date?) {
         return await withCheckedContinuation { continuation in
             Task.detached(priority: .utility) {
                 let now      = Date()
                 let calendar = Calendar.current
                 let lc       = text.lowercased()
 
-                // 1. NSDataDetector — handles "tomorrow at 3pm", "next Monday at noon", etc.
+                var start: Date? = nil
+                var end:   Date? = nil
+
+                let contextSuffix = timeOfDayContext(from: lc)
+
+                // ── 1. NSDataDetector for start (+ range when plausible) ──────────
                 if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) {
                     let matches = detector.matches(in: text, range: NSRange(text.startIndex..., in: text))
-                    if let date = matches.first?.date {
-                        continuation.resume(returning: date); return
+                    if let match = matches.first, let rawStart = match.date {
+                        let hour   = calendar.component(.hour, from: rawStart)
+                        let minute = calendar.component(.minute, from: rawStart)
+                        var adjusted = rawStart
+
+                        // Date-only result (midnight, no explicit time) → default 9 AM
+                        if !hasExplicitTime(lc) && hour == 0 && minute == 0 {
+                            adjusted = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: rawStart) ?? rawStart
+                        }
+                        // Context word overrides ambiguous AM/PM on the start hour (1–11)
+                        else if !hasExplicitAMPM(lc), let ctx = contextSuffix, hour >= 1 && hour <= 11 {
+                            if ctx == "pm" && hour < 12 {
+                                adjusted = calendar.date(byAdding: .hour, value: 12, to: rawStart) ?? rawStart
+                            } else if ctx == "am" && hour >= 12 {
+                                adjusted = calendar.date(byAdding: .hour, value: -12, to: rawStart) ?? rawStart
+                            }
+                        }
+                        // No context word, ambiguous hour 1–7 → assume PM
+                        else if !hasExplicitAMPM(lc) && contextSuffix == nil && hour >= 1 && hour <= 7 {
+                            adjusted = calendar.date(byAdding: .hour, value: 12, to: rawStart) ?? rawStart
+                        }
+
+                        start = adjusted
+
+                        // Cap at 12 hours: longer durations mean NSDataDetector
+                        // misread "3 to 5" as a date range, not a time range.
+                        if match.duration > 0 && match.duration <= 43200 {
+                            end = adjusted.addingTimeInterval(match.duration)
+                        }
                     }
                 }
 
-                // 2. Relative time — "in 30 minutes", "in 2 hours", "2 hours from now"
-                if let date = relativeOffsetDate(from: lc, now: now, calendar: calendar) {
-                    continuation.resume(returning: date); return
+                // ── 2. Regex fallback for end ("X to Y" / "X - Y") ───────────────
+                // Runs when NSDataDetector gave no range or an implausible duration.
+                if end == nil {
+                    let base = start ?? now
+                    let pattern = #"\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*(?:to|-)\s*(\d{1,2}(?::\d{2})?(?:\s*(?:am|pm))?)\b"#
+                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                       let match = regex.firstMatch(in: lc, range: NSRange(lc.startIndex..., in: lc)),
+                       let endRange = Range(match.range(at: 1), in: lc) {
+
+                        var endToken = String(lc[endRange]).trimmingCharacters(in: .whitespaces)
+                        let tokenHasAMPM = endToken.range(of: #"\b(am|pm)\b"#, options: .regularExpression) != nil
+
+                        if !tokenHasAMPM {
+                            if let ctx = contextSuffix {
+                                // Priority 1: context word ("afternoon" / "evening" / "morning")
+                                endToken += ctx
+                            } else {
+                                // Priority 2: infer from start time, then business-hours heuristic
+                                let startHour  = calendar.component(.hour, from: base)
+                                let startIsPM  = startHour >= 12
+                                let normalized = startHour % 12 == 0 ? 12 : startHour % 12
+                                if let hourStr = endToken.components(separatedBy: ":").first,
+                                   let endHour = Int(hourStr.trimmingCharacters(in: .whitespaces)) {
+                                    endToken += inferEndSuffix(endHour: endHour, startHour: normalized, startIsPM: startIsPM)
+                                }
+                            }
+                        }
+
+                        let probe = "meeting at \(endToken)"
+                        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue),
+                           let m = detector.firstMatch(in: probe, range: NSRange(probe.startIndex..., in: probe)),
+                           let parsed = m.date {
+                            let comps = calendar.dateComponents([.hour, .minute], from: parsed)
+                            end = calendar.date(bySettingHour: comps.hour ?? 0,
+                                                minute: comps.minute ?? 0,
+                                                second: 0, of: base)
+                        }
+                    }
                 }
 
-                // 3. Keyword fallback
-                let result: Date?
-                if lc.contains("tonight") {
-                    result = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: now)
-                } else if lc.contains("tomorrow") {
-                    let t = calendar.date(byAdding: .day, value: 1, to: now) ?? now
-                    result = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: t)
-                } else if lc.contains("today") {
-                    result = now
-                } else if lc.contains("next week") {
-                    result = calendar.date(byAdding: .weekOfYear, value: 1, to: now)
-                } else {
-                    result = nil
+                // ── 3. Relative offset fallback for start ─────────────────────────
+                if start == nil {
+                    start = relativeOffsetDate(from: lc, now: now, calendar: calendar)
                 }
-                continuation.resume(returning: result)
+
+                continuation.resume(returning: (start, end))
             }
         }
+    }
+
+    // MARK: - Recurrence Extraction
+
+    /// Detects recurrence keywords and returns the matching rule.
+    /// Priority: weekdays > daily > weekly > monthly.
+    private func extractRecurrenceFromText(_ text: String) -> RecurrenceRule {
+        let lc = text.lowercased()
+        if lc.range(of: #"\b(every\s+weekday|weekdays|mon(day)?\s+(through|to|-)\s+fri(day)?)\b"#, options: .regularExpression) != nil {
+            return .weekdays
+        }
+        if lc.range(of: #"\b(every\s+day|daily)\b"#, options: .regularExpression) != nil {
+            return .daily
+        }
+        if lc.range(of: #"\b(every\s+week|weekly|every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun))\b"#, options: .regularExpression) != nil {
+            return .weekly
+        }
+        if lc.range(of: #"\b(every\s+month|monthly)\b"#, options: .regularExpression) != nil {
+            return .monthly
+        }
+        return .none
     }
 
     // MARK: - Title Extraction
@@ -935,6 +1212,38 @@ struct AddEventView: View {
         isRecording = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
+}
+
+// MARK: - NLP helpers (file-scope for Task.detached)
+
+/// Returns true if the text contains an explicit clock time (digits + am/pm, or HH:MM).
+private func hasExplicitTime(_ lc: String) -> Bool {
+    lc.range(of: #"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}:\d{2}\b|\b(?:noon|midnight)\b"#,
+             options: .regularExpression) != nil
+}
+
+/// Returns true if the text contains an explicit am/pm marker.
+private func hasExplicitAMPM(_ lc: String) -> Bool {
+    lc.range(of: #"\b(am|pm)\b"#, options: .regularExpression) != nil
+}
+
+/// Returns "am" or "pm" based on time-of-day words in the text, or nil if none found.
+/// Priority: afternoon / evening / night → "pm";  morning → "am"
+private func timeOfDayContext(from lc: String) -> String? {
+    if lc.range(of: #"\b(afternoon|evening|tonight|at night)\b"#, options: .regularExpression) != nil { return "pm" }
+    if lc.range(of: #"\b(morning)\b"#, options: .regularExpression) != nil { return "am" }
+    return nil
+}
+
+/// Last-resort AM/PM inference when no context word and no explicit AM/PM on the token.
+/// - end == 12 or end < 8  → "pm"
+/// - end > startHour       → same period as start
+/// - end ≤ startHour       → "pm" (e.g. "9 to 5" → 5 PM)
+private func inferEndSuffix(endHour: Int, startHour: Int, startIsPM: Bool) -> String {
+    if endHour == 12 { return "pm" }
+    if endHour < 8   { return "pm" }
+    if endHour > startHour { return startIsPM ? "pm" : "am" }
+    return "pm"
 }
 
 // MARK: - Relative time helpers (file-scope for Task.detached)

@@ -51,8 +51,6 @@ private struct OlanaLockScreenView: View {
     private var isDark: Bool { colorScheme == .dark }
     private var color: Color { urgencyColor(context.attributes.urgencyRaw) }
 
-    // Foreground text colors adapt to the background tint.
-    // Use SwiftUI semantic colors so the widget extension doesn't need UIKit.
     private var primaryText:   Color { isDark ? .white               : .primary }
     private var secondaryText: Color { isDark ? .white.opacity(0.55) : .secondary }
 
@@ -125,41 +123,50 @@ struct OlanaWidgetsLiveActivity: Widget {
             DynamicIsland {
 
                 // ── Expanded (long-press) ────────────────────────────────────
+                //
+                // Leading: urgency icon + full event title on one horizontal line
+                // Trailing: large live countdown with "remaining" sublabel
+                // Bottom: start time chip + urgency badge
+
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         Image(systemName: urgencySymbol(context.attributes.urgencyRaw))
-                            .font(.caption.weight(.semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(urgencyColor(context.attributes.urgencyRaw))
                         Text(context.attributes.eventTitle)
-                            .font(.caption.weight(.semibold))
+                            .font(.subheadline.weight(.bold))
                             .foregroundStyle(.white)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: Date()...context.state.eventStart, countsDown: true)
-                        .font(.caption.bold().monospacedDigit())
-                        .foregroundStyle(urgencyColor(context.attributes.urgencyRaw))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(urgencyColor(context.attributes.urgencyRaw).opacity(0.18))
-                        )
+                    if context.state.status == "done" {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.green)
+                    } else {
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(timerInterval: Date()...context.state.eventStart, countsDown: true)
+                                .font(.title3.bold().monospacedDigit())
+                                .foregroundStyle(urgencyColor(context.attributes.urgencyRaw))
+                                .multilineTextAlignment(.trailing)
+                            Text("remaining")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.45))
+                        }
+                    }
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack(spacing: 6) {
                         Image(systemName: "clock")
                             .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.45))
-                        Text("Starts at")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.55))
+                            .foregroundStyle(.white.opacity(0.4))
                         Text(context.state.eventStart, style: .time)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.white.opacity(0.75))
                         Spacer()
                         Text(urgencyLabel(context.attributes.urgencyRaw))
                             .font(.caption2.weight(.bold))
@@ -175,21 +182,31 @@ struct OlanaWidgetsLiveActivity: Widget {
                 }
 
             } compactLeading: {
-                Image(systemName: urgencySymbol(context.attributes.urgencyRaw))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(urgencyColor(context.attributes.urgencyRaw))
+                // Event title runs horizontally from the left side of the pill
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(urgencyColor(context.attributes.urgencyRaw))
+                        .frame(width: 7, height: 7)
+                    Text(context.attributes.eventTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
 
             } compactTrailing: {
-                Text(timerInterval: Date()...context.state.eventStart, countsDown: true)
-                    .font(.caption.bold().monospacedDigit())
-                    .foregroundStyle(urgencyColor(context.attributes.urgencyRaw))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(
-                        Capsule()
-                            .fill(urgencyColor(context.attributes.urgencyRaw).opacity(0.18))
-                    )
-                    .frame(minWidth: 44)
+                // Live countdown on the right side of the pill
+                if context.state.status == "done" {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                } else {
+                    Text(timerInterval: Date()...context.state.eventStart, countsDown: true)
+                        .font(.system(size: 12, weight: .bold).monospacedDigit())
+                        .foregroundStyle(urgencyColor(context.attributes.urgencyRaw))
+                        .multilineTextAlignment(.trailing)
+                        .frame(minWidth: 44)
+                }
 
             } minimal: {
                 Image(systemName: urgencySymbol(context.attributes.urgencyRaw))

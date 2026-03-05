@@ -23,6 +23,8 @@ struct CalendarView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
 
+    @EnvironmentObject private var calendarManager: CalendarIntegrationManager
+
     // Calendar permission consent sheet
     @State private var showingCalendarConsent = false
     // ✅ REMOVED: @Binding var showingProfile: Bool
@@ -203,6 +205,11 @@ struct CalendarView: View {
             .onAppear {
                 isViewVisible = true
                 selectedDate = Date()
+                // Quick-sync calendar events on each foreground appearance
+                Task { await calendarManager.performQuickSync() }
+                // Catch up: start Live Activities for any events already in the lead window.
+                let events = store.events
+                Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
                 // Show consent sheet contextually when user first opens Calendar tab
                 let status = EKEventStore.authorizationStatus(for: .event)
                 if status == .notDetermined {
@@ -228,6 +235,9 @@ struct CalendarView: View {
             .sheet(isPresented: $showingAddSheet) {
                 AddEventView()
                     .environmentObject(store)
+                    .presentationDetents([.fraction(0.75), .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(24)
             }
             .sheet(isPresented: $showingCalendarConsent) {
                 CalendarConsentSheet(onConnect: {
@@ -362,7 +372,7 @@ struct CalendarView: View {
                             if !dayEvents.isEmpty {
                                 ForEach(0..<min(dayEvents.count, 3), id: \.self) { index in
                                     Circle()
-                                        .fill(color(for: dayEvents[index].urgency))
+                                        .fill(color(for: dayEvents[index].effectiveUrgency))
                                         .frame(width: 4, height: 4)
                                 }
                                 if dayEvents.count > 3 {
@@ -469,7 +479,7 @@ struct CalendarView: View {
                         ForEach(Array(selectedEvents.prefix(2).enumerated()), id: \.element.id) { index, event in
                             HStack(spacing: 12) {
                                 Circle()
-                                    .fill(color(for: event.urgency))
+                                    .fill(color(for: event.effectiveUrgency))
                                     .frame(width: 8, height: 8)
                                 
                                 VStack(alignment: .leading, spacing: 4) {
@@ -478,9 +488,15 @@ struct CalendarView: View {
                                         .foregroundStyle(theme.colors.ink)
                                         .lineLimit(1)
                                     
-                                    Text(timeRangeString(start: event.start, end: event.end))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    Text(event.isAllDay
+                                        ? "All Day"
+                                        : event.isTask
+                                            ? "Start  \(calendarTimeFormatter.string(from: event.start))"
+                                            : "Start  \(calendarTimeFormatter.string(from: event.start))  ·  End  \(calendarTimeFormatter.string(from: event.end))"
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                                 }
                                 
                                 Spacer()
@@ -578,10 +594,6 @@ struct CalendarView: View {
         }
     }
     
-    private func timeRangeString(start: Date, end: Date) -> String {
-        "\(calendarTimeFormatter.string(from: start)) – \(calendarTimeFormatter.string(from: end))"
-    }
-
     private func showToast(_ message: String) {
         toastTimer?.invalidate()
         
@@ -616,37 +628,35 @@ struct EventTimelineRow: View {
     @Environment(\.colorScheme) private var colorScheme
     
     private var urgencyColor: Color {
-        switch event.urgency {
+        switch event.effectiveUrgency {
         case .low: return theme.colors.urgencyLow
         case .medium: return theme.colors.urgencyMedium
         case .high: return theme.colors.urgencyHigh
         }
     }
     
+    // Status derived from completion flag and real time bounds — no fallbacks.
     private var statusColor: Color {
         let now = Date()
-        if event.end < now {
-            return .gray
-        } else if event.start <= now && event.end >= now {
-            return theme.colors.urgencyMedium
-        } else {
-            return urgencyColor
-        }
+        if event.completed              { return theme.colors.success }
+        if event.start > now            { return urgencyColor }
+        if event.isTask                 { return .orange }          // task is past due
+        if event.end > now              { return theme.colors.urgencyMedium } // in progress
+        return .gray                                                // event ended
     }
-    
+
     private var statusText: String {
         let now = Date()
-        if event.end < now {
-            return "Done"
-        } else if event.start <= now && event.end >= now {
-            return "In Progress"
-        } else {
-            return "Upcoming"
-        }
+        if event.completed              { return "Completed" }
+        if event.start > now            { return "Upcoming" }
+        if event.isTask                 { return "Past Due" }
+        if event.end > now              { return "In Progress" }
+        return "Ended"
     }
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
+            // Timeline connector
             VStack(spacing: 0) {
                 if !isFirst {
                     Rectangle()
@@ -654,15 +664,10 @@ struct EventTimelineRow: View {
                         .frame(width: 2)
                         .frame(height: 12)
                 }
-                
                 Circle()
                     .fill(statusColor)
                     .frame(width: 12, height: 12)
-                    .overlay(
-                        Circle()
-                            .stroke(statusColor.opacity(0.3), lineWidth: 4)
-                    )
-                
+                    .overlay(Circle().stroke(statusColor.opacity(0.3), lineWidth: 4))
                 if !isLast {
                     Rectangle()
                         .fill(Color.secondary.opacity(0.2))
@@ -672,36 +677,37 @@ struct EventTimelineRow: View {
             }
             .frame(width: 12)
             .padding(.top, 2)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(event.title)
-                        .font(.headline)
-                        .foregroundStyle(theme.colors.ink)
-                    
-                    Text(timeRangeString(start: event.start, end: event.end))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 10) {
+                // Title
+                Text(event.title)
+                    .font(.headline)
+                    .foregroundStyle(theme.colors.ink)
+
+                // Date + time pills
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        if event.isAllDay {
+                            timePill(relativeDateLabel(for: event.start))
+                            timePill("All Day")
+                        } else {
+                            timePill(relativeDateLabel(for: event.start))
+                            timePill("Start  \(calendarTimeFormatter.string(from: event.start))")
+                            if !event.isTask {
+                                timePill("End  \(calendarTimeFormatter.string(from: event.end))")
+                            }
+                        }
+                    }
                 }
-                
-                HStack(spacing: 8) {
-                    Text(statusText)
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule().fill(statusColor.opacity(0.15))
-                        )
-                        .foregroundStyle(statusColor)
-                    
-                    Text(urgencyLabel(event.urgency))
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule().fill(urgencyColor.opacity(0.15))
-                        )
-                        .foregroundStyle(urgencyColor)
+
+                // Status · urgency · type badges
+                HStack(spacing: 6) {
+                    badge(statusText, color: statusColor)
+                    badge(urgencyLabel(event.effectiveUrgency), color: urgencyColor)
+                    badge(
+                        event.isTask ? "Task" : "Event",
+                        color: event.isTask ? .secondary : theme.colors.ribbon
+                    )
                 }
             }
             .padding(.vertical, 12)
@@ -709,16 +715,40 @@ struct EventTimelineRow: View {
         }
         .padding(.bottom, isLast ? 0 : 8)
     }
-    
-    private func timeRangeString(start: Date, end: Date) -> String {
-        "\(calendarTimeFormatter.string(from: start)) – \(calendarTimeFormatter.string(from: end))"
+
+    // MARK: - Helpers
+
+    private func timePill(_ label: String) -> some View {
+        Text(label)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.secondary.opacity(0.08)))
     }
-    
+
+    private func badge(_ label: String, color: Color) -> some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(color.opacity(0.13)))
+    }
+
+    private func relativeDateLabel(for date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date)     { return "Today" }
+        if cal.isDateInTomorrow(date)  { return "Tomorrow" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
     private func urgencyLabel(_ urgency: EventUrgency) -> String {
         switch urgency {
-        case .low: return "Low Priority"
-        case .medium: return "Medium Priority"
-        case .high: return "High Priority"
+        case .low:    return "Later"
+        case .medium: return "Soon"
+        case .high:   return "Critical"
         }
     }
 }

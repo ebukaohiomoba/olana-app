@@ -22,7 +22,11 @@
 	<string>Olana reads your calendar so you always know what&apos;s coming — without switching apps. Your data stays on your device and is never shared.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
-	<key>NSAlarmsUsageDescription</key>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.olana.liveActivityCheck</string>
+	</array>
+	<key>NSAlarmKitUsageDescription</key>
 	<string>Olana uses full-screen alarms to make sure you never miss a critical event, even when your phone is on silent.</string>
 </dict>
 </plist>

@@ -150,7 +150,7 @@ final class UrgencyModelUpdater {
     /// Feature names must match UrgencyBucketModel's input spec exactly.
     private let featureNames = [
         "hours_until_start", "is_past_due", "within_24h", "within_72h", "within_14d",
-        "hour_of_day", "is_morning", "is_evening", "day_of_week", "is_weekend",
+        "hour_of_day", "has_casual_keyword", "beyond_14d", "day_of_week", "is_weekend",
         "has_deadline_keyword", "has_asap", "has_urgent", "has_tentative_keyword",
         "has_highstakes_keyword", "text_length", "word_count", "has_question_mark",
         "has_exclamation", "is_all_day", "has_location", "has_attendees",

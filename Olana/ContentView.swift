@@ -28,6 +28,7 @@ struct ContentView: View {
 
             CalendarView()
                 .environmentObject(store)
+                .environmentObject(calendarManager)
                 .tabItem { Label("Calendar", systemImage: "calendar") }
                 .tag(1)
 
