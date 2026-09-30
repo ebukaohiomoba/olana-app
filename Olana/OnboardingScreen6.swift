@@ -12,15 +12,11 @@ struct OnboardingScreen6: View {
     let onComplete: () -> Void
 
     @EnvironmentObject private var store: EventStore
-    @ObservedObject private var urgencyManager = UrgencyManager.shared
 
     @State private var oluState: OluState = .idle
     @State private var taskText: String = ""
     @State private var selectedUrgency: EventUrgency = .medium
     @State private var userOverrode: Bool = false        // true once user taps a pill manually
-    @State private var mlClassification: UrgencyClassification? = nil
-    @State private var isAnalyzing: Bool = false
-    @State private var analysisTask: Task<Void, Never>? = nil
 
     @State private var showConfirmation: Bool = false
     @State private var isSubmitted: Bool = false
@@ -77,7 +73,6 @@ struct OnboardingScreen6: View {
                         .disabled(isSubmitted)
                         .lineLimit(1...4)
                         .onChange(of: taskText) { _, newValue in
-                            scheduleAnalysis(for: newValue)
                         }
                         .padding(.bottom, 10)
 
@@ -146,62 +141,17 @@ struct OnboardingScreen6: View {
         }
     }
 
-    // MARK: - ML Suggestion Row
+    // MARK: - Suggestion Row
+    //
+    // Onboarding no longer runs urgency classification. The task it creates starts
+    // at `now`, so the combiner's past-event guard rejects it and it can never rank
+    // or alert — a second of on-device inference bought a label on a throwaway event.
+    // Picking the urgency by hand is also the better teaching moment: it is how the
+    // user learns the three levels exist.
 
     @ViewBuilder
     private var mlSuggestionRow: some View {
-        if isAnalyzing {
-            HStack(spacing: 6) {
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .tint(Color(hex: "F0A500"))
-                Text("Olu is thinking...")
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(Color(hex: "C4B5A5"))
-            }
-            .frame(height: 20)
-        } else if let classification = mlClassification {
-            HStack(spacing: 6) {
-                Image(systemName: "brain")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(hex: "F0A500"))
-                Text("Olu suggests: \(pillLabel(for: urgencyFromBucket(classification.bucket)))")
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(Color(hex: "A07850"))
-            }
-            .frame(height: 20)
-        } else {
-            Color.clear.frame(height: 20)
-        }
-    }
-
-    // MARK: - CoreML Analysis (debounced, mirrors AddItemView pattern)
-
-    private func scheduleAnalysis(for text: String) {
-        analysisTask?.cancel()
-        mlClassification = nil
-
-        guard text.count > 3 else {
-            isAnalyzing = false
-            return
-        }
-
-        isAnalyzing = true
-        analysisTask = Task {
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s debounce
-            guard !Task.isCancelled else { return }
-
-            let result = urgencyManager.classify(text: text, date: nil)
-
-            await MainActor.run {
-                mlClassification = result
-                isAnalyzing = false
-                // Only update the pill selection if the user hasn't manually picked one
-                if !userOverrode {
-                    selectedUrgency = urgencyFromBucket(result.bucket)
-                }
-            }
-        }
+        Color.clear.frame(height: 20)
     }
 
     // MARK: - Submit
@@ -210,7 +160,6 @@ struct OnboardingScreen6: View {
         let title = taskText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, !isSubmitted else { return }
 
-        analysisTask?.cancel()
         isTextFieldFocused = false
         isSubmitted = true
 
@@ -218,17 +167,11 @@ struct OnboardingScreen6: View {
         let end = now.addingTimeInterval(3600)
 
         // Persist the task
+        // No semantics passed: this event starts at `now`, so the combiner's
+        // past-event guard rejects it and backfill's `start > now` filter never
+        // sees it. Caching would prevent nothing.
         store.addEvent(title: title, start: now, end: end, urgency: selectedUrgency)
 
-        // Log ML feedback so CoreML can learn from this interaction
-        if let classification = mlClassification {
-            urgencyManager.logFeedback(
-                text: title,
-                date: now,
-                mlPrediction: classification.bucket,
-                userChoice: bucketFrom(selectedUrgency)
-            )
-        }
 
         // Celebrate
         oluState = .celebrate
@@ -245,21 +188,7 @@ struct OnboardingScreen6: View {
 
     // MARK: - Helpers
 
-    private func urgencyFromBucket(_ bucket: UrgencyBucket) -> EventUrgency {
-        switch bucket {
-        case .low:    return .low
-        case .medium: return .medium
-        case .high:   return .high
-        }
-    }
 
-    private func bucketFrom(_ urgency: EventUrgency) -> UrgencyBucket {
-        switch urgency {
-        case .low:    return .low
-        case .medium: return .medium
-        case .high:   return .high
-        }
-    }
 
     private func pillLabel(for urgency: EventUrgency) -> String {
         switch urgency {

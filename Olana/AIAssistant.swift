@@ -110,6 +110,102 @@ final class AIAssistant: ObservableObject {
         return session
     }
 
+    // MARK: - Phase 2: Semantics
+
+    /// Extract the stable semantic properties of an event. Runs once per event and
+    /// the result is cached on OlanaEvent, so this is never on a render path.
+    ///
+    /// `nonisolated` on purpose: extraction runs across a whole calendar and must
+    /// not serialise behind the main actor.
+    ///
+    /// A fresh session per call is also deliberate. LanguageModelSession accumulates
+    /// a transcript and the context window is 4096 tokens, so reusing one session
+    /// across a calendar overflows it after a few dozen events.
+    ///
+    /// Returns nil on any failure. Most callers want `semantics(title:)`, which
+    /// also says why.
+    nonisolated func extractSemantics(
+        title: String,
+        calendarName: String? = nil
+    ) async -> EventSemantics? {
+        guard case .available = SystemLanguageModel.default.availability else { return nil }
+
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let prompt = EventSemanticsPrompt.prompt(title: trimmed, calendarName: calendarName)
+        // Greedy sampling makes this deterministic. Verified at 100% field agreement
+        // over three passes on 35 events; default sampling is not.
+        let options = GenerationOptions(sampling: .greedy)
+
+        // One retry on failure, with a fresh session.
+        //
+        // The safety guardrail raises Refusal sporadically rather than per-title:
+        // measured, "Payday" was refused three times inside a 58-event run and not
+        // once when the same title was sent on its own. A refusal is therefore a
+        // transient condition under sustained extraction, not a verdict about the
+        // event, and it is worth asking again before giving up.
+        for attempt in 0..<2 {
+            let session = LanguageModelSession(instructions: EventSemanticsPrompt.instructions)
+            do {
+                return try await session.respond(
+                    to: prompt, generating: EventSemantics.self, options: options
+                ).content
+            } catch {
+                if attempt == 0 {
+                    // Brief pause: retrying immediately tends to reproduce it.
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    continue
+                }
+                return nil
+            }
+        }
+        return nil
+    }
+
+    /// Why an event did or did not get semantics. The cases are handled
+    /// differently, which is why this is not an optional.
+    enum SemanticsOutcome: Sendable {
+        /// The model judged it.
+        case judged(EventSemantics)
+        /// The title is a placeholder ("Hold", "OOO"). Permanent: never retry.
+        case placeholder
+        /// Apple Intelligence is off, still downloading, or unsupported here.
+        /// Nothing was attempted, so try again once it becomes available.
+        case unavailable
+        /// The model was asked and failed twice. Usually a transient refusal.
+        case failed
+    }
+
+    /// Semantics for an event, or the reason there are none.
+    ///
+    /// There is deliberately no keyword fallback. Only the model's judgement is
+    /// allowed to rank an event or ring an alarm; without it the event stays in
+    /// chronological order and silent.
+    nonisolated func semantics(title: String, calendarName: String? = nil) async -> SemanticsOutcome {
+        // A placeholder title cannot be classified honestly, by the model or anyone.
+        guard !EventSemantics.isLowInformation(title: title) else { return .placeholder }
+        guard case .available = SystemLanguageModel.default.availability else { return .unavailable }
+
+        if let s = await extractSemantics(title: title, calendarName: calendarName) {
+            return .judged(s)
+        }
+        return .failed
+    }
+
+    /// Short, user-facing reason Olu cannot suggest urgency, or nil when it can.
+    var unavailableMessage: String? {
+        guard case .unavailable(let reason) = state else { return nil }
+        switch reason {
+        case "appleIntelligenceNotEnabled":
+            return "Turn on Apple Intelligence in Settings for Olu's suggestions."
+        case "modelNotReady":
+            return "Apple Intelligence is still getting ready. Olu's suggestions will start soon."
+        default:
+            return "Olu's suggestions need a device with Apple Intelligence."
+        }
+    }
+
     // MARK: - Smoke test
 
     /// Returns a one-line status string. Debug-only — wire to a temporary button

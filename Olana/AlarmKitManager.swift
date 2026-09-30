@@ -59,13 +59,36 @@ final class AlarmKitManager: ObservableObject {
 
     // MARK: - Scheduling
 
-    func scheduleAlarm(for event: OlanaEvent) async {
+    /// Schedule a full-screen alarm for an event.
+    ///
+    /// `at` is when the alarm fires, which is not always when the event starts.
+    /// For anything requiring preparation it is the moment the person needs to
+    /// begin, so a presentation on Thursday can ring on Monday. That gap is the
+    /// only reason this app rings at a time no other calendar would.
+    ///
+    /// `label` becomes the text on the lock screen. For a prep-advanced alarm it
+    /// should say what to start, not merely name the event, because "Presentation
+    /// to the board" ringing three days early reads as a bug without it.
+    func scheduleAlarm(
+        for event: OlanaEvent,
+        at fireDate: Date? = nil,
+        label: String? = nil
+    ) async {
         guard isAuthorized else { return }
+
+        let when = fireDate ?? event.start
+
+        // Never schedule into the past. AlarmKit would reject it, and a stale
+        // alarm firing immediately on launch is the worst possible first impression.
+        guard when > Date() else {
+            print("⏭️ AlarmKitManager: skipped '\(event.title)' — fire date is in the past")
+            return
+        }
 
         await cancelAlarm(for: event.id)
 
         let alert = AlarmPresentation.Alert(
-            title: LocalizedStringResource(stringLiteral: event.title),
+            title: LocalizedStringResource(stringLiteral: label ?? event.title),
             stopButton: AlarmButton(
                 text: "Dismiss",
                 textColor: .white,
@@ -82,11 +105,11 @@ final class AlarmKitManager: ObservableObject {
             try await manager.schedule(
                 id: event.id,
                 configuration: .alarm(
-                    schedule: .fixed(event.start),
+                    schedule: .fixed(when),
                     attributes: attributes
                 )
             )
-            print("✅ AlarmKitManager: Alarm set for '\(event.title)' at \(event.start)")
+            print("✅ AlarmKitManager: Alarm set for '\(event.title)' at \(when)")
         } catch {
             print("❌ AlarmKitManager: Failed to schedule alarm – \(error)")
         }

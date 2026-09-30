@@ -724,9 +724,24 @@ struct AddEventView: View {
                 .tracking(1.5)
                 .foregroundStyle(Color(hex: "A07850"))
 
-            Text(friendlyUrgencyName(for: mlUrgency))
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(Color(hex: "1A0F00"))
+            if mlClassification == nil {
+                // No judgement to show. Say so rather than presenting the default
+                // selection below as if Olu had chosen it.
+                Text("Pick one below")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Color(hex: "1A0F00"))
+
+                Text(AIAssistant.shared.unavailableMessage
+                     ?? "Olu couldn't tell how urgent this is from the title.")
+                    .font(.system(size: 14))
+                    .italic()
+                    .foregroundStyle(Color(hex: "A07850"))
+                    .lineSpacing(3)
+            } else {
+                Text(friendlyUrgencyName(for: mlUrgency))
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Color(hex: "1A0F00"))
+            }
 
             if let rationale = mlClassification?.rationale {
                 Text(rationale)
@@ -939,9 +954,7 @@ struct AddEventView: View {
             // ML classification off main thread
             let text = eventText
             let dateHint = selectedDate ?? extractedDate
-            let classification = await Task.detached(priority: .userInitiated) {
-                UrgencyManager.shared.classify(text: text, date: dateHint)
-            }.value
+            let classification = await UrgencyManager.shared.classify(text: text, date: dateHint)
 
             if selectedDate == nil || (selectedEndDate == nil && extractedEndDate == nil) {
                 let (start, end) = await extractDateRangeFromText(text)
@@ -976,14 +989,17 @@ struct AddEventView: View {
         store.addEvent(
             title: title, start: date, end: endDate,
             urgency: finalUrgency, recurrenceRule: selectedRecurrence,
-            isTask: !isEventMode
+            isTask: !isEventMode,
+            // Carry the judgement made on the review screen rather than discarding
+            // it and paying for the same extraction again during backfill.
+            semantics: mlClassification?.semantics,
+            userPickedUrgency: userSelectedUrgency != nil
         )
 
         if let classification = mlClassification {
-            urgencyManager.logFeedback(
-                text: eventText, date: date,
-                mlPrediction: classification.bucket,
-                userChoice:   urgencyBucketFrom(finalUrgency)
+            urgencyManager.logDisagreement(
+                title: title, suggested: classification.bucket,
+                chosen: finalUrgency, semantics: classification.semantics
             )
         }
 

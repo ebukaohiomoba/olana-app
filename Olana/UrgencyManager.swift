@@ -2,300 +2,264 @@
 //  UrgencyManager.swift
 //  Olana
 //
-//  PIPELINE (in order):
-//  1. Feature extraction  — always runs
-//  2. CoreML prediction   — always runs; returns neutral placeholder if model unavailable
-//  3. k-NN personalization — blends user correction history (UrgencyCorrectionStore)
-//  4. Hard overrides      — only for unambiguous facts (past due, "911"/"emergency")
-//  5. Rationale           — informational only, does not change bucket
+//  Orchestrates urgency. Three moving parts, deliberately small:
+//
+//    1. EventSemantics  — what the event is. Extracted once by Apple's on-device
+//                         model, cached on OlanaEvent, never recomputed.
+//    2. UrgencyCombiner — what the clock says. Pure and re-run freely.
+//    3. This file       — fetch or extract semantics, hand them to the combiner.
+//
+//  There is no training, no correction history and no personalisation in the
+//  ranking path. The model is the same for every user on their first event,
+//  which is the property the previous CoreML stack could not provide.
+//
+//  Ranking requires Apple Intelligence. Without it, or for any event the model
+//  cannot judge, there are no semantics: the event keeps its chronological
+//  position and never alerts. There is no keyword fallback by design.
 //
 
 import Foundation
-import CoreML
 import Combine
+import SwiftData
 
-class UrgencyManager: ObservableObject {
+// MARK: - Compatibility surface
 
-    static let shared = UrgencyManager()
+/// Kept so existing callers (AddEventView, OnboardingScreen6) continue to work.
+public typealias UrgencyBucket = EventUrgency
 
-    private let mlEngine = MLUrgencyEngine()
+public struct UrgencyClassification: Sendable, Equatable {
+    public let bucket: EventUrgency
+    public let score: Double
+    public let semantics: EventSemantics
+    public let tier: UrgencyCombiner.AlertTier
+    public let rationale: String?
+}
 
-    @Published var isModelLoaded: Bool = false
+// MARK: - Manager
 
-    /// Feature vector captured during classify() so logFeedback() can reuse it
-    /// without recomputing from text (keeps the correction perfectly aligned).
-    private var lastFeatures: [Double]?
+@MainActor
+public final class UrgencyManager: ObservableObject {
+
+    public static let shared = UrgencyManager()
+
+    /// Bump when EventSemanticsPrompt.instructions changes, to invalidate caches.
+    /// 2: keyword fallback removed, so any semantics it produced are discarded.
+    public static let promptVersion = 2
+
+    /// Failed extractions of the same title before it is left unranked for good.
+    static let maxFailures = 3
+
+    @Published public private(set) var isModelAvailable: Bool = false
 
     private init() {
-        isModelLoaded = mlEngine.isLoaded
+        isModelAvailable = AIAssistant.shared.isAvailable
     }
 
-    // MARK: - Main Classification
+    /// Re-read Apple Intelligence state. Call on foreground: the user can turn it
+    /// on in Settings, and the model finishes downloading while we are suspended.
+    public func refresh() {
+        AIAssistant.shared.refreshAvailability()
+        isModelAvailable = AIAssistant.shared.isAvailable
+    }
 
-    func classify(
-        text: String,
-        date: Date?,
-        isAllDay: Bool = false,
-        location: String? = nil,
-        attendees: [String] = [],
-        context: EventContext? = nil
-    ) -> UrgencyClassification {
+    // MARK: - Classification
 
-        let now        = Date()
-        let hoursUntil = (date?.timeIntervalSinceNow ?? (7 * 24 * 3600)) / 3600
-        let lowercased = text.lowercased()
+    /// Classify free text, for the capture path where no OlanaEvent exists yet.
+    /// nil when the model cannot judge it, so the UI offers no suggestion rather
+    /// than presenting a default as if it were one.
+    public func classify(text: String, date: Date?,
+                         calendarName: String? = nil) async -> UrgencyClassification? {
+        guard case .judged(let sem) = await AIAssistant.shared.semantics(
+            title: text, calendarName: calendarName
+        ) else { return nil }
+        return build(sem, start: date)
+    }
 
-        // ── 1. Feature extraction ─────────────────────────────────────────────
-        let features = extractFeatures(
-            text: text, date: date, isAllDay: isAllDay,
-            location: location, attendees: attendees, context: context
-        )
-        lastFeatures = features
-
-        // ── 2. CoreML — runs unconditionally ──────────────────────────────────
-        // When the model is not yet loaded we return a neutral placeholder rather
-        // than a rule-based fallback — the UI treats this as "model warming up".
-        var result: UrgencyClassification
-        if isModelLoaded, let prediction = mlEngine.predict(features: features) {
-            result = prediction
-        } else {
-            result = UrgencyClassification(
-                bucket: .medium, score: 5.0, confidence: 0.0,
-                engineVersion: "model_unavailable", rationale: nil
-            )
+    /// Classify a stored event, using its cached semantics when they are still valid.
+    /// Extracts and writes the cache back when they are missing or stale.
+    public func classify(event: OlanaEvent, context: ModelContext? = nil) async -> UrgencyClassification? {
+        if let cached = event.cachedSemantics {
+            return build(cached, start: event.start)
         }
+        let judged = event.record(await AIAssistant.shared.semantics(
+            title: event.title, calendarName: event.calendarName
+        ))
+        try? context?.save()
+        return judged.map { build($0, start: event.start) }
+    }
 
-        // ── 3. k-NN personalization ───────────────────────────────────────────
-        // Blends user correction history. Only overrides when k-NN is strongly
-        // consistent (≥80 %) AND ML is uncertain (<80 % confidence).
-        result = mlEngine.applyKNNCorrection(to: result, features: features)
+    /// Synchronous score for an event whose semantics are already cached.
+    /// Returns nil for past events and for events not yet extracted, so callers
+    /// can leave those in chronological order rather than guessing at them.
+    public nonisolated func cachedScore(for event: OlanaEvent,
+                                        now: Date = Date()) -> UrgencyCombiner.Result? {
+        guard let sem = event.cachedSemantics else { return nil }
+        return UrgencyCombiner.score(semantics: sem, start: event.start, now: now)
+    }
 
-        // ── 3b. Score bias (immediate learning from corrections) ──────────────
-        // Derived from recent correction direction counts — no retraining needed.
-        // Shifts the effective bucket thresholds whenever the user consistently
-        // disagrees with ML in the same direction (e.g. always lowers high→medium).
-        let bias = UrgencyCorrectionStore.shared.learnedScoreAdjustment
-        if abs(bias) >= 0.15 {
-            let biasedScore  = result.score + bias
-            let biasedBucket: UrgencyBucket = biasedScore < 3.2 ? .low
-                                            : biasedScore >= 6.2 ? .high : .medium
-            if biasedBucket != result.bucket {
-                result = UrgencyClassification(
-                    bucket:        biasedBucket,
-                    score:         biasedScore,
-                    confidence:    result.confidence * 0.92,
-                    engineVersion: result.engineVersion + "+bias",
-                    rationale:     nil
-                )
-            }
-        }
-
-        // ── 4. Hard overrides (unambiguous facts — not heuristics) ────────────
-        if let date, date < now {
+    private func build(_ sem: EventSemantics, start: Date?) -> UrgencyClassification {
+        guard let start, let r = UrgencyCombiner.score(semantics: sem, start: start) else {
+            // No date, or already started. Neither is a ranking question.
             return UrgencyClassification(
-                bucket: .high, score: 9.8, confidence: 0.99,
-                engineVersion: "override_past_due",
-                rationale: "🚨 PAST DUE!"
+                bucket: .low, score: 0, semantics: sem,
+                tier: .silent, rationale: nil
             )
         }
-        // "911" / "emergency" — user literally wrote these words
-        if ["911", "call 911", "emergency"].contains(where: { lowercased.contains($0) }) {
-            return UrgencyClassification(
-                bucket: .high, score: 9.9, confidence: 0.99,
-                engineVersion: "override_emergency",
-                rationale: "🚨 Emergency language"
-            )
-        }
-
-        // ── 5. Build rationale (informational only — does not change bucket) ──
-        var reasons: [String] = []
-        if let r = result.rationale { reasons.append(r) }
-
-        // Time context
-        if let date {
-            switch hoursUntil {
-            case ..<0:    reasons.append("🚨 PAST DUE!")
-            case ..<1:    reasons.append("⏰ Within 1 hour")
-            case ..<2:    reasons.append("⏰ Within 2 hours")
-            case ..<24:   reasons.append("⏰ Today (\(Int(hoursUntil))h away)")
-            case ..<48:   reasons.append("📅 Tomorrow")
-            case ..<72:   reasons.append("📅 Within 3 days")
-            case ..<168:  reasons.append("📅 This week")
-            default:      reasons.append("📅 \(Int(hoursUntil / 24)) days away")
-            }
-        } else {
-            reasons.append("❓ No specific date")
-        }
-
-        // Keyword signals (informational)
-        if lowercased.containsDeadlineKeyword  { reasons.append("📅 Mentions deadline") }
-        if lowercased.containsHighStakesKeyword { reasons.append("⭐ High-stakes event") }
-        if !attendees.isEmpty                  { reasons.append("👥 \(attendees.count) attendees") }
-        if isAllDay                            { reasons.append("📆 All-day event") }
-
-        let fullRationale = reasons.isEmpty ? nil : reasons.joined(separator: " • ")
-
         return UrgencyClassification(
-            bucket: result.bucket,
-            score: result.score,
-            confidence: result.confidence,
-            engineVersion: result.engineVersion,
-            rationale: fullRationale
+            bucket: r.urgency,
+            score: r.score,
+            semantics: sem,
+            tier: r.tier,
+            rationale: UrgencyCombiner.explain(r, semantics: sem, start: start)
         )
     }
 
-    /// Convenience — classify a stored OlanaEvent directly.
-    func classify(event: OlanaEvent, context: EventContext? = nil) -> UrgencyClassification {
-        classify(text: event.title, date: event.start, context: context)
-    }
+    // MARK: - Telemetry
 
-    // MARK: - Feedback Logging (on-device learning)
-
-    /// Call this every time the user saves an event.
-    /// Both confirmations (user agreed) and corrections (user changed) are recorded —
-    /// confirmations are important to prevent the k-NN from only seeing error cases.
-    func logFeedback(
-        text: String,
-        date: Date?,
-        mlPrediction: UrgencyBucket,
-        userChoice: UrgencyBucket
-    ) {
-        // Reuse the exact features from the preceding classify() call so the
-        // correction aligns with what the model actually saw
-        let features = lastFeatures ?? extractFeatures(
-            text: text, date: date, isAllDay: false,
-            location: nil, attendees: [], context: nil
-        )
-
-        UrgencyCorrectionStore.shared.record(
-            features: features,
-            mlPrediction: mlPrediction,
-            userChoice: userChoice,
-            text: text
-        )
-
-        // Trigger background fine-tuning if the update threshold is reached
-        if UrgencyCorrectionStore.shared.shouldTriggerUpdate {
-            let engine = mlEngine
-            Task.detached(priority: .background) {
-                UrgencyModelUpdater.shared.updateIfNeeded(engine: engine)
-            }
+    /// Record that the user changed the suggested urgency. Nothing in the ranking
+    /// path reads this. It exists so that if disagreement turns out to be common
+    /// and patterned, a per-category bias layer can be built on real evidence
+    /// rather than on the assumption that one is needed.
+    public func logDisagreement(title: String, suggested: EventUrgency,
+                                chosen: EventUrgency, semantics: EventSemantics?) {
+        guard suggested != chosen else { return }
+        let row: [String: String] = [
+            "at": ISO8601DateFormatter().string(from: Date()),
+            "title": title,
+            "suggested": String(suggested.rawValue),
+            "chosen": String(chosen.rawValue),
+            "consequence": semantics?.consequence.rawValue ?? "",
+            "movability": semantics?.movability.rawValue ?? "",
+            "category": semantics?.category.rawValue ?? ""
+        ]
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("urgency_disagreements.jsonl")
+        guard let data = try? JSONSerialization.data(withJSONObject: row),
+              var line = String(data: data, encoding: .utf8) else { return }
+        line += "\n"
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(Data(line.utf8))
+            try? handle.close()
+        } else {
+            try? Data(line.utf8).write(to: url)
         }
     }
 
-    // MARK: - Feature Extraction (unchanged)
+    // MARK: - Backfill
 
-    private func extractFeatures(
-        text: String,
-        date: Date?,
-        isAllDay: Bool,
-        location: String?,
-        attendees: [String],
-        context: EventContext?
-    ) -> [Double] {
+    /// Extract semantics for events that do not have them yet.
+    ///
+    /// Forward-looking and bounded on purpose. A freshly connected calendar can
+    /// hold hundreds of events; extracting all of them at once would be a visible
+    /// battery cost for no benefit, since past events are never ranked.
+    /// Returns the events it gave semantics to, so the caller can re-schedule
+    /// notifications for them now that the alarm gate has something to read.
+    ///
+    /// Does nothing while Apple Intelligence is unavailable. Those events stay
+    /// pending, not unrankable, so they are picked up once the model is ready.
+    @discardableResult
+    public func backfill(events: [OlanaEvent], context: ModelContext,
+                         limit: Int = 40, horizonDays: Int = 60) async -> [OlanaEvent] {
+        let now = Date()
+        let horizon = now.addingTimeInterval(Double(horizonDays) * 86400)
 
-        let now       = Date()
-        let eventDate = date ?? Calendar.current.date(byAdding: .day, value: 7, to: now)!
+        let pending = events
+            .filter { $0.start > now && $0.start < horizon }
+            .filter { $0.cachedSemantics == nil && !$0.isUnrankable }
+            .sorted { $0.start < $1.start }        // nearest first: they matter soonest
+            .prefix(limit)
 
-        let lowercased = text.lowercased()
+        guard !pending.isEmpty, isModelAvailable else { return [] }
 
-        // TIME FEATURES (0-9)
-        let hoursUntilStart = max(eventDate.timeIntervalSince(now) / 3600, 0)
-        let isPastDue  = eventDate < now
-        let within24h  = hoursUntilStart < 24  && hoursUntilStart >= 0
-        let within72h  = hoursUntilStart < 72  && hoursUntilStart >= 0
-        let within14d  = hoursUntilStart < 336 && hoursUntilStart >= 0
-
-        let calendar          = Calendar.current
-        let hour              = calendar.component(.hour,    from: eventDate)
-        let weekday           = calendar.component(.weekday, from: eventDate) - 1
-        let hasCasualKeyword  = lowercased.containsCasualKeyword
-        let beyondTwoWeeks    = hoursUntilStart > 336   // f[7]: >14 days away
-        let isWeekend         = [0, 6].contains(weekday)
-
-        // TEXT FEATURES (10-18)
-        let hasDeadlineKeyword    = lowercased.containsDeadlineKeyword
-        let hasAsap               = lowercased.contains("asap")
-        let hasUrgent             = lowercased.contains("urgent")
-        let hasTentativeKeyword   = lowercased.containsTentativeKeyword
-        let hasHighStakesKeyword  = lowercased.containsHighStakesKeyword
-        let textLength            = Double(text.count)
-        let wordCount             = Double(text.components(separatedBy: .whitespacesAndNewlines)
-                                          .filter { !$0.isEmpty }.count)
-        let hasQuestionMark       = text.contains("?")
-        let hasExclamation        = text.contains("!")
-
-        // EVENT FEATURES (19-24)
-        let hasLocation     = location != nil && !location!.isEmpty
-        let hasAttendees    = !attendees.isEmpty
-        let attendeeCount   = Double(attendees.count)
-        let externalAtt     = attendees.filter { !$0.contains("@yourdomain.com") }
-        let hasExternal     = !externalAtt.isEmpty
-        let externalRatio   = attendees.isEmpty ? 0.0 : Double(externalAtt.count) / Double(attendees.count)
-
-        // CONTEXT FEATURES (25-28)
-        let hasOverlap30m      = context?.hasOverlappingEvent ?? false
-        let hasDenseHour       = context?.hasDenseHour ?? false
-        let travelSlack        = context?.travelSlackMinutes ?? 0.0
-        let hasTightTravel     = hasLocation && travelSlack < 15  // only meaningful with a location
-
-        // INTERACTION FEATURES (29-31)
-        let deadlineAndClose   = hasDeadlineKeyword && within72h
-        let stakesAndClose     = hasHighStakesKeyword && within72h
-        let alldayNoDeadline   = isAllDay && !hasDeadlineKeyword
-
-        return [
-            hoursUntilStart,        isPastDue ? 1.0 : 0.0,   within24h ? 1.0 : 0.0,
-            within72h ? 1.0 : 0.0,  within14d ? 1.0 : 0.0,   Double(hour),
-            hasCasualKeyword ? 1.0 : 0.0,  beyondTwoWeeks ? 1.0 : 0.0,  Double(weekday),
-            isWeekend ? 1.0 : 0.0,
-            hasDeadlineKeyword ? 1.0 : 0.0,  hasAsap ? 1.0 : 0.0,   hasUrgent ? 1.0 : 0.0,
-            hasTentativeKeyword ? 1.0 : 0.0, hasHighStakesKeyword ? 1.0 : 0.0,
-            textLength, wordCount,  hasQuestionMark ? 1.0 : 0.0,  hasExclamation ? 1.0 : 0.0,
-            isAllDay ? 1.0 : 0.0,   hasLocation ? 1.0 : 0.0,  hasAttendees ? 1.0 : 0.0,
-            attendeeCount,          hasExternal ? 1.0 : 0.0,   externalRatio,
-            hasOverlap30m ? 1.0 : 0.0, hasDenseHour ? 1.0 : 0.0, travelSlack,
-            hasTightTravel ? 1.0 : 0.0,
-            deadlineAndClose ? 1.0 : 0.0, stakesAndClose ? 1.0 : 0.0, alldayNoDeadline ? 1.0 : 0.0
-        ]
-    }
-
-}
-
-// MARK: - Supporting Types
-
-struct EventContext {
-    let hasOverlappingEvent: Bool
-    let hasDenseHour: Bool
-    let travelSlackMinutes: Double
-
-    init(hasOverlappingEvent: Bool = false, hasDenseHour: Bool = false, travelSlackMinutes: Double = 0) {
-        self.hasOverlappingEvent = hasOverlappingEvent
-        self.hasDenseHour        = hasDenseHour
-        self.travelSlackMinutes  = travelSlackMinutes
+        var populated: [OlanaEvent] = []
+        for event in pending {
+            let outcome = await AIAssistant.shared.semantics(
+                title: event.title, calendarName: event.calendarName
+            )
+            // Became unavailable mid-run (turned off, low power). Stop asking.
+            if case .unavailable = outcome { break }
+            if event.record(outcome) != nil { populated.append(event) }
+        }
+        try? context.save()
+        return populated
     }
 }
 
-// MARK: - String Extensions
+// MARK: - OlanaEvent cache bridging
 
-extension String {
-    var containsDeadlineKeyword: Bool {
-        ["deadline", "due", "submit", "final", "deliver", "turn in"]
-            .contains { lowercased().contains($0) }
+public extension OlanaEvent {
+
+    /// True when the stored sem* fields were written for this title and prompt.
+    private var semIsCurrent: Bool {
+        semVersion == UrgencyManager.promptVersion && semTitle == title
     }
-    var containsTentativeKeyword: Bool {
-        ["maybe", "tentative", "possibly", "might", "tbd", "to be determined"]
-            .contains { lowercased().contains($0) }
+
+    /// Cached semantics, or nil when absent, stale, or derived from a different title.
+    var cachedSemantics: EventSemantics? {
+        guard semIsCurrent,
+              let c = semConsequence.flatMap(Consequence.init(rawValue:)),
+              let m = semMovability.flatMap(Movability.init(rawValue:)),
+              let p = semPrepNeed.flatMap(PrepNeed.init(rawValue:)),
+              let g = semCategory.flatMap(EventCategory.init(rawValue:)),
+              let r = semRequiresPrep
+        else { return nil }
+        return EventSemantics(consequence: c, movability: m,
+                              requiresPreparation: r, prepNeed: p, category: g)
     }
-    var containsCasualKeyword: Bool {
-        ["coffee", "lunch", "catch up", "browse", "errand", "walk", "read",
-         "relax", "chill", "hang out", "netflix", "movie", "game", "gym", "workout"]
-            .contains { lowercased().contains($0) }
+
+    /// No semantics and none coming until the title or prompt changes: either a
+    /// placeholder title, or one the model has failed on too many times.
+    /// Backfill skips these.
+    var isUnrankable: Bool {
+        guard semIsCurrent, semConsequence == nil else { return false }
+        guard let failures = semFailures else { return true }     // placeholder
+        return failures >= UrgencyManager.maxFailures
     }
-    var containsHighStakesKeyword: Bool {
-        // "meeting" removed (too generic — causes false high urgency on standups)
-        ["ceo", "exec", "board", "client", "presentation", "demo", "interview",
-         "doctor", "surgery", "court", "wedding", "exam", "performance", "funeral"]
-            .contains { lowercased().contains($0) }
+
+    /// Store the result of an extraction attempt. Returns the semantics when the
+    /// model judged the event, nil otherwise.
+    @discardableResult
+    internal func record(_ outcome: AIAssistant.SemanticsOutcome) -> EventSemantics? {
+        switch outcome {
+        case .judged(let s):
+            applySemantics(s)
+            return s
+        case .placeholder:
+            clearSemantics()
+            semFailures = nil
+        case .failed:
+            let previous = semIsCurrent && semConsequence == nil ? (semFailures ?? 0) : 0
+            clearSemantics()
+            semFailures = previous + 1
+        case .unavailable:
+            break   // nothing was attempted; leave the event pending
+        }
+        return nil
+    }
+
+    private func clearSemantics() {
+        semConsequence = nil; semMovability = nil; semRequiresPrep = nil
+        semPrepNeed = nil; semCategory = nil
+        semVersion = UrgencyManager.promptVersion
+        semTitle = title
+    }
+
+    func applySemantics(_ s: EventSemantics) {
+        semConsequence  = s.consequence.rawValue
+        semMovability   = s.movability.rawValue
+        semRequiresPrep = s.requiresPreparation
+        semPrepNeed     = s.prepNeed.rawValue
+        semCategory     = s.category.rawValue
+        semVersion      = UrgencyManager.promptVersion
+        semTitle        = title
+        semFailures     = nil
+
+        // Keep the legacy field in sync so existing UI, notification profiles and
+        // AlarmKit tiers keep reading one value. User overrides still win via
+        // `effectiveUrgency`, which is untouched.
+        if let r = UrgencyCombiner.score(semantics: s, start: start) {
+            urgency = r.urgency
+        }
     }
 }

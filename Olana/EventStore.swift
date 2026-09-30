@@ -56,7 +56,60 @@ final class EventStore: ObservableObject {
             }
         }
 
-        homeDisplayEvents = (nonRecurring + representatives).sorted { $0.start < $1.start }
+        // Rank by urgency score, falling back to chronological.
+        //
+        // Two deliberate choices. Events without cached semantics keep their
+        // chronological position rather than being guessed at, because a guess
+        // that outranks a real commitment is worse than no ranking. And ties
+        // break on start time so the order stays stable as scores change.
+        let candidates = nonRecurring + representatives
+        let scored: [(event: OlanaEvent, score: Double?)] = candidates.map {
+            ($0, UrgencyManager.shared.cachedScore(for: $0, now: now)?.score)
+        }
+
+        homeDisplayEvents = scored.sorted { a, b in
+            switch (a.score, b.score) {
+            case let (x?, y?):
+                if abs(x - y) > 0.001 { return x > y }
+                return a.event.start < b.event.start
+            case (_?, nil): return true          // ranked events lead
+            case (nil, _?): return false
+            case (nil, nil): return a.event.start < b.event.start
+            }
+        }.map(\.event)
+    }
+
+    /// The single thing most worth attention right now, or nil when nothing is.
+    /// A ranked list is still a list; for the people this app is for, the list is
+    /// itself the overwhelm. This is what the home view should lead with.
+    var focusEvent: OlanaEvent? {
+        let now = Date()
+        return homeDisplayEvents.first {
+            !$0.completed && $0.start > now
+                && (UrgencyManager.shared.cachedScore(for: $0, now: now)?.urgency ?? .low) != .low
+        }
+    }
+
+    // MARK: - Semantics backfill
+
+    /// Extract semantics for upcoming events that do not have them, then re-rank.
+    ///
+    /// Safe to call often: `backfill` skips anything already cached, so after the
+    /// first pass this is close to free. Bounded per call so a freshly connected
+    /// calendar warms up over a few invocations rather than in one battery spike.
+    func backfillSemantics(limit: Int = 25) async {
+        // Apple Intelligence may have been turned on, or finished downloading,
+        // since the last pass. Events skipped while it was unavailable wait for this.
+        UrgencyManager.shared.refresh()
+        let populated = await UrgencyManager.shared.backfill(events: events, context: context, limit: limit)
+        rebuildHomeDisplayEvents()
+
+        // Notifications were scheduled when these events arrived, before any
+        // semantics existed, so the alarm gate saw nothing and declined. Now that
+        // they can be judged, schedule again.
+        for event in populated {
+            await NotificationEngine.shared.scheduleNotifications(for: event)
+        }
     }
 
     func load(predicate: Predicate<OlanaEvent>? = nil, sort: [SortDescriptor<OlanaEvent>] = [SortDescriptor(\OlanaEvent.start, order: .forward)]) {
@@ -71,11 +124,32 @@ final class EventStore: ObservableObject {
         rebuildHomeDisplayEvents()
     }
 
-    func addEvent(title: String, start: Date, end: Date, urgency: EventUrgency, recurrenceRule: RecurrenceRule = .none, isTask: Bool = false) {
+    /// `semantics` carries the model's judgement from the capture screen, where it
+    /// was already computed. Without it the event lands with an empty cache: it
+    /// cannot be ranked until backfill re-extracts the identical answer, and the
+    /// alarm gate, which requires cached semantics, silently declines to schedule.
+    /// So the one path where the user explicitly said something matters was the one
+    /// path that could never alarm them.
+    ///
+    /// `userPickedUrgency` records whether they overrode the suggestion, so their
+    /// choice is stored as an override rather than being overwritten by the combiner.
+    func addEvent(title: String, start: Date, end: Date, urgency: EventUrgency,
+                  recurrenceRule: RecurrenceRule = .none, isTask: Bool = false,
+                  semantics: EventSemantics? = nil,
+                  userPickedUrgency: Bool = false) {
         let new = OlanaEvent(title: title, start: start, end: end, urgency: urgency, recurrenceRule: recurrenceRule, isTask: isTask)
+
+        if let semantics { new.applySemantics(semantics) }
+        // applySemantics derives urgency from the combiner, now or later during
+        // backfill. If the user chose one, that is the answer: store it as an
+        // override so neither path can overwrite it.
+        if userPickedUrgency { new.urgencyOverrideRaw = urgency.rawValue }
+
         context.insert(new)
         if recurrenceRule != .none {
             for occurrence in generateOccurrences(from: new, rule: recurrenceRule) {
+                if let semantics { occurrence.applySemantics(semantics) }
+                if userPickedUrgency { occurrence.urgencyOverrideRaw = urgency.rawValue }
                 context.insert(occurrence)
             }
         }
@@ -255,27 +329,99 @@ final class EventStore: ObservableObject {
 
     // MARK: - External Calendar Sync
 
-    /// Replaces all events from a given external calendar source within the
-    /// specified date range with the newly-normalised events.
-    /// Called by CalendarIntegrationManager after each sync cycle.
+    /// Merges freshly normalised events from one external source into the store.
+    ///
+    /// Matching events are updated in place, not replaced. Replacing them gave
+    /// every synced event a new id on every sync and threw away everything Olana
+    /// knew about it: cached semantics (so the model re-judged the same events on
+    /// every foreground), completion, the user's urgency override, and the id that
+    /// scheduled notifications and alarms are keyed on.
+    ///
+    /// Matching runs in two passes:
+    ///   1. Source event id plus start time. EventKit gives every occurrence of a
+    ///      recurring series the same identifier, so the id alone is not unique.
+    ///   2. Source id alone, when exactly one stored event has that id and it is
+    ///      not before the window. This finds a single event that was moved in
+    ///      the source calendar, without letting a new occurrence of a yearly
+    ///      series take over last year's (completed) one.
+    ///
+    /// Lookups span the whole source so an event moved into the window from
+    /// outside it is updated rather than duplicated. Deletion is limited to the
+    /// window, since that is all the source was asked about.
     func syncExternalCalendarEvents(
         source: String,
         from start: Date,
         to end: Date,
         events normalisedEvents: [OlanaEvent]
     ) {
-        // Remove stale synced events in this window
-        let toRemove = events.filter {
-            $0.externalCalendarId == source &&
-            $0.start >= start &&
-            $0.start <= end
-        }
-        for e in toRemove { context.delete(e) }
+        let existing = events.filter { $0.externalCalendarId == source }
 
-        // Insert normalised replacements
-        for event in normalisedEvents { context.insert(event) }
+        var byIdAndStart: [String: OlanaEvent] = [:]
+        var byId: [String: [OlanaEvent]] = [:]
+        for event in existing {
+            guard let xid = event.externalEventId else { continue }
+            let key = Self.syncKey(xid, event.start)
+            if byIdAndStart[key] == nil { byIdAndStart[key] = event }
+            byId[xid, default: []].append(event)
+        }
+
+        var matched = Set<UUID>()
+        var changed: [OlanaEvent] = []
+        var unmatched: [OlanaEvent] = []
+
+        // Pass 1: same event, same time.
+        for incoming in normalisedEvents {
+            if let xid = incoming.externalEventId,
+               let event = byIdAndStart[Self.syncKey(xid, incoming.start)],
+               matched.insert(event.id).inserted {
+                if event.mergeSynced(from: incoming) { changed.append(event) }
+            } else {
+                unmatched.append(incoming)
+            }
+        }
+
+        // Pass 2: same event, moved. Anything still unmatched is new.
+        for incoming in unmatched {
+            if let xid = incoming.externalEventId,
+               let candidates = byId[xid], candidates.count == 1,
+               let event = candidates.first,
+               event.start >= start,
+               matched.insert(event.id).inserted {
+                if event.mergeSynced(from: incoming) { changed.append(event) }
+            } else {
+                context.insert(incoming)
+            }
+        }
+
+        // Gone from the source.
+        let removed = existing.filter {
+            $0.start >= start && $0.start <= end && !matched.contains($0.id)
+        }
+        for event in removed { context.delete(event) }
 
         saveAndRefresh()
+
+        // Reminders for a removed or changed event were scheduled against its old
+        // time and title. Cancel them. Changed events that still have semantics
+        // are rescheduled now; a changed title has lost its semantics and is
+        // rescheduled by backfill once it has been judged again.
+        let removedIds = removed.map(\.id)
+        let changedEvents = changed
+        Task {
+            for id in removedIds {
+                await NotificationEngine.shared.cancelNotifications(for: id)
+            }
+            for event in changedEvents {
+                await NotificationEngine.shared.cancelNotifications(for: event.id)
+                if !event.completed, event.cachedSemantics != nil {
+                    await NotificationEngine.shared.scheduleNotifications(for: event)
+                }
+            }
+        }
+    }
+
+    private static func syncKey(_ externalId: String, _ start: Date) -> String {
+        "\(externalId)|\(Int(start.timeIntervalSince1970))"
     }
 
     // MARK: - Notification Action Observers
@@ -324,3 +470,46 @@ final class EventStore: ObservableObject {
         load()
     }
 }
+
+// MARK: - Sync merging
+
+private extension OlanaEvent {
+
+    /// Copy what the source calendar owns from a freshly normalised copy.
+    ///
+    /// Olana-owned state is left alone: id, completion, user override and cached
+    /// semantics. Semantics stay valid unless the title changed, which
+    /// `cachedSemantics` detects by itself.
+    ///
+    /// Returns true when anything a reminder depends on changed.
+    func mergeSynced(from incoming: OlanaEvent) -> Bool {
+        let reminderChanged = title != incoming.title
+            || start != incoming.start
+            || end != incoming.end
+            || isAllDay != incoming.isAllDay
+
+        title            = incoming.title
+        start            = incoming.start
+        end              = incoming.end
+        isAllDay         = incoming.isAllDay
+        notes            = incoming.notes
+        location         = incoming.location
+        calendarName     = incoming.calendarName
+        calendarColorHex = incoming.calendarColorHex
+        externalEventId  = incoming.externalEventId
+        sourceModifiedAt = incoming.sourceModifiedAt
+        syncedAt         = incoming.syncedAt
+
+        // Judged events keep the model's urgency, re-scored for the new time.
+        // Unjudged ones take whatever sync assigned.
+        if let semantics = cachedSemantics {
+            if let result = UrgencyCombiner.score(semantics: semantics, start: start) {
+                urgency = result.urgency
+            }
+        } else {
+            urgency = incoming.urgency
+        }
+        return reminderChanged
+    }
+}
+

@@ -1,0 +1,13 @@
+Dentist appointment | 44 | Health
+Flight to Chicago | 44 | Travel
+Surgery | 44 | Health
+Jury duty | 44 |
+Passport appointment | 44 | Travel
+Allergy shot | 44 | Health
+Ortho adjustment | 44 | Health
+Blood test | 44 | Health
+Tax filing | 44 |
+Rent due | 44 |
+Presentation to the board | 44 | Work
+Final exam | 44 | School
+Hosting dinner for 12 | 44 | Personal

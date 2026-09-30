@@ -90,6 +90,25 @@ public final class OlanaEvent {
     /// Always false for events imported from Google/Apple Calendar.
     public var isTask: Bool = false
 
+    // MARK: - Cached semantics (Option 5)
+    // Stable properties of the event, extracted once and never recomputed. All
+    // optional with defaults so lightweight SwiftData migration keeps working.
+    // The clock lives in UrgencyCombiner, not here, so none of this goes stale.
+    public var semConsequence: String? = nil
+    public var semMovability: String? = nil
+    public var semRequiresPrep: Bool? = nil
+    public var semPrepNeed: String? = nil
+    public var semCategory: String? = nil
+    /// Bumped when the extraction prompt changes, to invalidate cached answers.
+    public var semVersion: Int? = nil
+    /// The title the semantics were derived from, so an edit re-extracts.
+    /// Stored as the string itself: `String.hashValue` is reseeded every launch,
+    /// so a stored hash never matches again after the app restarts.
+    public var semTitle: String? = nil
+    /// Consecutive failed extractions for this title. After a few, the event is
+    /// treated as unrankable so it stops taking a backfill slot every launch.
+    public var semFailures: Int? = nil
+
     /// Stable identity for SwiftUI List/ForEach.
     /// Non-recurring: uses the unique UUID string.
     /// Recurring: uses the series key (title + rule) so that when the displayed

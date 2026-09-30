@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import Novel
+@testable import Olana
 
 struct NovelTests {
 

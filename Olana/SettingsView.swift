@@ -1178,7 +1178,7 @@ private struct AlarmKitSettingCard: View {
             icon: "alarm.fill",
             iconColor: .red,
             title: "Alarm Alerts",
-            description: "Full-screen alarms for Critical events, even on silent"
+            description: "Full-screen alarms for the most pressing events, even on silent"
         ) {
             VStack(spacing: 14) {
                 // Master toggle
@@ -1186,7 +1186,7 @@ private struct AlarmKitSettingCard: View {
                     .tint(theme.colors.ribbon)
 
                 // Authorization state — shown only when the toggle is on
-                if settings.urgentAlarmsEnabled {
+                if settings.urgentAlarmsEnabled || settings.soonAlarmsEnabled {
                     Divider()
 
                     switch alarmKit.authorizationState {
@@ -1228,11 +1228,17 @@ private struct AlarmKitSettingCard: View {
 
     /// A binding that requests AlarmKit authorization the first time the user
     /// turns the toggle on, then falls back to the stored preference.
+    /// A genuine master switch. UrgencyCombiner produces two alarm-worthy tiers —
+    /// `.alarm` for severe events and `.timeSensitive` for the rest of Critical —
+    /// gated on `urgentAlarmsEnabled` and `soonAlarmsEnabled` respectively. Binding
+    /// this control to only the first meant turning "Alarm Alerts" off still let
+    /// alarms through, which reads as the app ignoring you.
     private var alarmToggleBinding: Binding<Bool> {
         Binding(
-            get: { settings.urgentAlarmsEnabled },
+            get: { settings.urgentAlarmsEnabled || settings.soonAlarmsEnabled },
             set: { newValue in
                 settings.urgentAlarmsEnabled = newValue
+                settings.soonAlarmsEnabled   = newValue
                 if newValue && alarmKit.authorizationState == .notDetermined {
                     Task { await alarmKit.requestAuthorization() }
                 }

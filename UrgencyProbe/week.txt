@@ -1,0 +1,19 @@
+# A realistic mixed week. Times vary on purpose: ranking is about the interaction
+# between what a thing is and how close it is, so everything at 44h tests nothing.
+Standup | 2 | Work
+Rent due | 5 | Admin
+Gym | 6 | Fitness
+1:1 with Marcus | 8 | Work
+Dentist appointment | 20 | Health
+Coffee with Sarah | 26 | Personal
+Slides for the offsite | 30 | Work
+Flight to Chicago | 34 | Travel
+Interview with Hightouch | 44 | Work
+Movie Night | 50 | Personal
+Presentation to the board | 72 | Work
+Hosting dinner for 12 | 80 | Personal
+Final exam | 96 | School
+Math homework due | 110 | School
+Tax filing | 200 | Admin
+Thesis proposal defense | 260 | School
+Concert | 400 | Personal

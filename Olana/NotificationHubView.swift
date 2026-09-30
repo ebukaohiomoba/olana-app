@@ -79,11 +79,9 @@ struct NotificationHubView: View {
                 NavigationLink { LaterDetailView() } label: {
                     UrgencyTierRow(
                         dot: Color(hex: "4A90D9"), name: "Later",
-                        desc: "Advance notice · auto-escalation available",
+                        desc: "Advance notice, never alarms",
                         pills: [
-                            s.laterLiveActivityEnabled ? ("Dynamic Island ✓", Color.green)    : ("Dynamic Island", Color(.systemGray4)),
-                            s.laterAlarmsEnabled       ? ("Alarm ✓", Color.green)             : ("Alarm", Color(.systemGray4)),
-                            s.escalateToSoonEnabled    ? ("Auto-escalate", theme.colors.ribbon) : ("Auto-escalate", Color(.systemGray4))
+                            s.laterLiveActivityEnabled ? ("Dynamic Island ✓", Color.green) : ("Dynamic Island", Color(.systemGray4))
                         ]
                     )
                 }.buttonStyle(.plain)
@@ -409,15 +407,6 @@ struct LaterDetailView: View {
                 }
             }
 
-            // Alarm
-            NHSectionLabel("ALARM")
-            NHCard {
-                NHRow(icon: "alarm.fill", iconColor: .red,
-                      title: "Set a real alarm", subtitle: "Plays even if your phone is silenced") {
-                    Toggle("", isOn: $s.laterAlarmsEnabled).labelsHidden().tint(theme.colors.ribbon)
-                }
-            }
-
             // Advance notice cadence
             NHSectionLabel("ADVANCE NOTICE")
             NHCard {
@@ -440,22 +429,6 @@ struct LaterDetailView: View {
                 NHRow(icon: "target", iconColor: Color(hex: "4A90D9"),
                       title: "Bypass Focus", subtitle: "Later tasks break through Focus filters") {
                     Toggle("", isOn: $s.laterBypassFocusEnabled).labelsHidden().tint(theme.colors.ribbon)
-                }
-            }
-
-            // Auto-escalation
-            NHSectionLabel("AUTO-ESCALATION")
-            NHCard {
-                NHRow(icon: "arrow.up.square.fill", iconColor: Color(.systemBlue),
-                      title: "Escalate to Soon",
-                      subtitle: "When a Later task is 7 days from due") {
-                    Toggle("", isOn: $s.escalateToSoonEnabled).labelsHidden().tint(theme.colors.ribbon)
-                }
-                Divider().padding(.leading, 54)
-                NHRow(icon: "arrow.up.square.fill", iconColor: Color(.systemBlue),
-                      title: "Escalate to Critical",
-                      subtitle: "When a Soon task is overdue by 24 hrs") {
-                    Toggle("", isOn: $s.escalateToCriticalEnabled).labelsHidden().tint(theme.colors.ribbon)
                 }
             }
 

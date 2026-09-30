@@ -103,6 +103,16 @@ struct HomeView: View {
         }
     }
 
+    /// The single most pressing upcoming event, with its score and reason.
+    /// nil when nothing qualifies, which is the common and correct case.
+    private var focus: (event: OlanaEvent, result: UrgencyCombiner.Result, reason: String)? {
+        guard let event = store.focusEvent,
+              let sem = event.cachedSemantics,
+              let result = UrgencyCombiner.score(semantics: sem, start: event.start)
+        else { return nil }
+        return (event, result, UrgencyCombiner.explain(result, semantics: sem, start: event.start))
+    }
+
     private var eventsForSelectedDay: [EventRowModel] {
         let cal = Calendar.current
         return store.homeDisplayEvents
@@ -251,6 +261,18 @@ struct HomeView: View {
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 4, trailing: 16))
 
+                    // ── The one thing worth attention ────────────────
+                    // Only on Today: while browsing other days a "right now"
+                    // card is noise rather than help.
+                    if Calendar.current.isDateInToday(selectedDay), let f = focus {
+                        FocusCard(event: f.event, result: f.result, reason: f.reason) {
+                            editingEvent = store.events.first { $0.id == f.event.id }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 12, trailing: 16))
+                    }
+
                     // ── Events for selected day or empty state ────────
                     if eventsForSelectedDay.isEmpty {
                         EmptyStateView()
@@ -370,8 +392,13 @@ struct HomeView: View {
                 motivationalMessage = motivationalMessages.randomElement() ?? motivationalMessages[0]
                 startTimersIfNeeded()
                 startImminentTimerIfNeeded()
-                // Quick-sync calendar events on each foreground appearance
-                Task { await calendarManager.performQuickSync() }
+                // Quick-sync calendar events on each foreground appearance,
+                // then extract semantics for anything new so the ranking is live
+                // on cold launch rather than only after a background round trip.
+                Task {
+                    await calendarManager.performQuickSync()
+                    await store.backfillSemantics()
+                }
                 // Catch up: start Live Activities for any events already in the lead window.
                 let events = store.events
                 Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
@@ -390,7 +417,10 @@ struct HomeView: View {
                     startTimersIfNeeded()
                     startImminentTimerIfNeeded()
                     oluManager.updateForTimeOfDay()
-                    Task { await calendarManager.performQuickSync() }
+                    Task {
+                        await calendarManager.performQuickSync()
+                        await store.backfillSemantics()
+                    }
                     // Catch up after being suspended in the background.
                     let events = store.events
                     Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }

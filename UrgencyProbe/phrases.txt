@@ -1,0 +1,7 @@
+# His exact examples, with the time phrase left inside the title.
+Math homework due next week | 168 | School | mathhw
+Math homework due tomorrow | 20 | School | mathhw
+Board game night this weekend | 60 | Personal | boardnight
+Board meeting this Friday | 60 | Work | boardnight
+Presentation next month | 700 | Work | pres
+Presentation tomorrow | 20 | Work | pres

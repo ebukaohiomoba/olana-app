@@ -1,0 +1,107 @@
+# Format:  title | hours until start | calendar | pairID
+# pairID groups minimal pairs so the report can show them side by side.
+
+# ============ MINIMAL PAIRS: same surface, different world ============
+Board game night with friends | 30 | Personal | board
+Board meeting | 30 | Work | board
+
+Coffee with Sarah | 26 | Personal | coffee
+Coffee with the CEO | 26 | Work | coffee
+
+Standup | 16 | Work | standup
+Standup comedy show | 16 | Personal | standup
+
+Pitch to investors | 48 | Work | pitch
+Batting practice | 48 | Personal | pitch
+
+Draft due | 40 | School | draft
+Fantasy football draft | 40 | Personal | draft
+
+Closing on the house | 72 | Admin | closing
+Closing shift | 12 | Work | closing
+
+Thesis defense | 120 | School | defense
+Defensive driving class | 120 | Admin | defense
+
+Bar exam | 200 | School | bar
+Drinks at the bar | 20 | Personal | bar
+
+Interview with Google | 44 | Work | interview
+Interview a candidate | 44 | Work | interview
+
+Blood test | 20 | Health | test
+Midterm test | 96 | School | test
+
+Recital, Maya performing | 100 | Family | recital
+Piano recital, I am performing | 100 | Personal | recital
+
+Deploy to production | 10 | Work | deploy
+Deploy the new rug | 60 | Personal | deploy
+
+Trial starts | 90 | Legal | trial
+Free trial class at the gym | 90 | Fitness | trial
+
+Performance review | 30 | Work | review
+Review notes for class | 30 | School | review
+
+Ship the release | 26 | Work | ship
+Ship the package | 26 | Admin | ship
+
+Physical therapy | 50 | Health | physical
+Physics final | 50 | School | physical
+
+Match day, kids soccer | 70 | Family | match
+Tennis match with Dan | 70 | Fitness | match
+
+Wedding, mine | 400 | Personal | wedding
+Wedding, cousin's | 400 | Family | wedding
+
+Dinner with Jess | 28 | Personal | dinner
+Hosting dinner for 12 | 28 | Personal | dinner
+
+Reading for pleasure | 14 | Personal | reading
+Reading response due | 14 | School | reading
+
+# ============ DATE PHRASES EMBEDDED IN THE TITLE ============
+Dentist appointment | 48 | Health | dates
+Dentist appointment in two days | 48 | Health | dates
+Taxes due next Monday | 200 | Admin | dates2
+Tax filing | 200 | Admin | dates2
+Flight on Friday | 60 | Travel | dates3
+Flight to Chicago | 60 | Travel | dates3
+
+# ============ HIGH CONSEQUENCE, VARIED PHRASING ============
+Court date | 90 | Legal |
+Visa appointment | 150 | Travel |
+Surgery | 48 | Health |
+Rent due | 5 | Admin |
+Insurance lapses today | 6 | Admin |
+Passport expires | 300 | Travel |
+Final warning meeting with HR | 24 | Work |
+Custody handoff | 18 | Family |
+On-call rotation starts | 20 | Work |
+Prescription runs out | 30 | Health |
+
+# ============ LOW CONSEQUENCE, VARIED PHRASING ============
+Gym | 8 | Fitness |
+Haircut | 40 | Personal |
+Grocery run | 6 | Personal |
+Netflix with Jess | 5 | Personal |
+Walk the dog | 3 | Personal |
+Browse the bookshop | 60 | Personal |
+Nap | 2 | Personal |
+
+# ============ AMBIGUOUS / KEYWORD TRAPS ============
+Dr. Adeyemi 3pm | 44 | Health |
+Deposition | 72 | Legal |
+Sign the lease | 30 | Admin |
+Bloodwork, fasting | 20 | Health |
+Quick sync with the board | 26 | Work |
+Just a chat with Priya | 30 | Work |
+Casual coffee, portfolio review | 34 | Work |
+Optional standup | 16 | Work |
+Move out inspection | 80 | Personal |
+Grant application deadline | 130 | Work |
+Renew car insurance | 130 | Admin |
+Pick up prescription | 28 | Health |
+DMV | 100 | Admin |

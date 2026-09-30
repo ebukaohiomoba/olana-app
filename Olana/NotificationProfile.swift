@@ -168,9 +168,6 @@ class NotificationSettings: ObservableObject {
     @Published var soonAlarmsEnabled: Bool {
         didSet { save(soonAlarmsEnabled, forKey: "soonAlarmsEnabled") }
     }
-    @Published var laterAlarmsEnabled: Bool {
-        didSet { save(laterAlarmsEnabled, forKey: "laterAlarmsEnabled") }
-    }
     @Published var soonLiveActivityEnabled: Bool {
         didSet { save(soonLiveActivityEnabled, forKey: "soonLiveActivityEnabled") }
     }
@@ -224,12 +221,6 @@ class NotificationSettings: ObservableObject {
     @Published var laterCadence: Int {
         didSet { save(laterCadence, forKey: "laterCadence") }
     }
-    @Published var escalateToSoonEnabled: Bool {
-        didSet { save(escalateToSoonEnabled, forKey: "escalateToSoonEnabled") }
-    }
-    @Published var escalateToCriticalEnabled: Bool {
-        didSet { save(escalateToCriticalEnabled, forKey: "escalateToCriticalEnabled") }
-    }
     @Published var silentUntilEscalated: Bool {
         didSet { save(silentUntilEscalated, forKey: "silentUntilEscalated") }
     }
@@ -270,7 +261,6 @@ class NotificationSettings: ObservableObject {
         self.enableAudioReminders       = kv.bool(  "enableAudioReminders")        ?? UserDefaults.standard.object(forKey: "enableAudioReminders")       as? Bool ?? true
         self.urgentAlarmsEnabled        = kv.bool(  "urgentAlarmsEnabled")         ?? UserDefaults.standard.object(forKey: "urgentAlarmsEnabled")        as? Bool ?? false
         self.soonAlarmsEnabled          = kv.bool(  "soonAlarmsEnabled")           ?? UserDefaults.standard.object(forKey: "soonAlarmsEnabled")          as? Bool ?? false
-        self.laterAlarmsEnabled         = kv.bool(  "laterAlarmsEnabled")          ?? UserDefaults.standard.object(forKey: "laterAlarmsEnabled")         as? Bool ?? false
         self.soonLiveActivityEnabled    = kv.bool(  "soonLiveActivityEnabled")     ?? UserDefaults.standard.object(forKey: "soonLiveActivityEnabled")    as? Bool ?? true
         self.laterLiveActivityEnabled   = kv.bool(  "laterLiveActivityEnabled")    ?? UserDefaults.standard.object(forKey: "laterLiveActivityEnabled")   as? Bool ?? false
         self.soonBypassFocusEnabled     = kv.bool(  "soonBypassFocusEnabled")      ?? UserDefaults.standard.object(forKey: "soonBypassFocusEnabled")     as? Bool ?? false
@@ -290,11 +280,9 @@ class NotificationSettings: ObservableObject {
         self.afternoonNudgeTime         = kv.date("afternoonNudgeTime")         ?? UserDefaults.standard.object(forKey: "afternoonNudgeTime")         as? Date ?? defaultAfternoon
         self.soonEventCadence           = kv.int( "soonEventCadence")           ?? UserDefaults.standard.object(forKey: "soonEventCadence")           as? Int  ?? 3
         self.laterCadence               = kv.int( "laterCadence")               ?? UserDefaults.standard.object(forKey: "laterCadence")               as? Int  ?? 2
-        self.escalateToSoonEnabled      = kv.bool("escalateToSoonEnabled")      ?? UserDefaults.standard.object(forKey: "escalateToSoonEnabled")      as? Bool ?? true
-        self.escalateToCriticalEnabled  = kv.bool("escalateToCriticalEnabled")  ?? UserDefaults.standard.object(forKey: "escalateToCriticalEnabled")  as? Bool ?? true
         self.silentUntilEscalated       = kv.bool("silentUntilEscalated")       ?? UserDefaults.standard.object(forKey: "silentUntilEscalated")       as? Bool ?? true
-        self.criticalExemptFromQuietHours  = kv.bool("criticalExemptFromQuietHours")  ?? UserDefaults.standard.object(forKey: "criticalExemptFromQuietHours")  as? Bool ?? true
-        self.alarmKitExemptFromQuietHours  = kv.bool("alarmKitExemptFromQuietHours")  ?? UserDefaults.standard.object(forKey: "alarmKitExemptFromQuietHours")  as? Bool ?? true
+        self.criticalExemptFromQuietHours  = kv.bool("criticalExemptFromQuietHours")  ?? UserDefaults.standard.object(forKey: "criticalExemptFromQuietHours")  as? Bool ?? false
+        self.alarmKitExemptFromQuietHours  = kv.bool("alarmKitExemptFromQuietHours")  ?? UserDefaults.standard.object(forKey: "alarmKitExemptFromQuietHours")  as? Bool ?? false
         self.notificationSound          = kv.object(forKey: "notificationSound") as? String ?? UserDefaults.standard.string(forKey: "notificationSound") ?? "olu_chime"
         self.alarmKitSound              = kv.object(forKey: "alarmKitSound")     as? String ?? UserDefaults.standard.string(forKey: "alarmKitSound")     ?? "gentle_rise"
 
@@ -357,8 +345,6 @@ class NotificationSettings: ObservableObject {
                     if let v = self.kv.bool("urgentAlarmsEnabled")        { self.urgentAlarmsEnabled = v }
                 case "soonAlarmsEnabled":
                     if let v = self.kv.bool("soonAlarmsEnabled")          { self.soonAlarmsEnabled = v }
-                case "laterAlarmsEnabled":
-                    if let v = self.kv.bool("laterAlarmsEnabled")         { self.laterAlarmsEnabled = v }
                 case "soonLiveActivityEnabled":
                     if let v = self.kv.bool("soonLiveActivityEnabled")    { self.soonLiveActivityEnabled = v }
                 case "laterLiveActivityEnabled":
@@ -389,10 +375,6 @@ class NotificationSettings: ObservableObject {
                     if let v = self.kv.int("soonEventCadence")                 { self.soonEventCadence = v }
                 case "laterCadence":
                     if let v = self.kv.int("laterCadence")                     { self.laterCadence = v }
-                case "escalateToSoonEnabled":
-                    if let v = self.kv.bool("escalateToSoonEnabled")           { self.escalateToSoonEnabled = v }
-                case "escalateToCriticalEnabled":
-                    if let v = self.kv.bool("escalateToCriticalEnabled")       { self.escalateToCriticalEnabled = v }
                 case "silentUntilEscalated":
                     if let v = self.kv.bool("silentUntilEscalated")            { self.silentUntilEscalated = v }
                 case "criticalExemptFromQuietHours":
@@ -667,30 +649,62 @@ class NotificationEngine: ObservableObject {
             await addCalendarAlarm(for: event)
         }
 
-        // AlarmKit: schedule a full-screen alarm based on per-urgency setting.
-        let alarmKitEnabled: Bool
-        switch event.urgency {
-        case .high:   alarmKitEnabled = settings.urgentAlarmsEnabled
-        case .medium: alarmKitEnabled = settings.soonAlarmsEnabled
-        case .low:    alarmKitEnabled = settings.laterAlarmsEnabled
+        // AlarmKit: a full-screen alarm cuts through Silent and Focus, and one
+        // wrong one gets the permission revoked in a single tap. So the gate is
+        // deliberately narrow and everything about it fails closed.
+        await scheduleAlarmIfEarned(for: event)
+    }
+
+    // MARK: - AlarmKit gate
+
+    /// Decide whether an event has earned the right to interrupt, and when.
+    ///
+    /// Three rules, all of which must hold:
+    ///   1. Semantics exist. Without them we have no view on the event, and
+    ///      guessing loudly is worse than staying quiet.
+    ///   2. The combiner rates it .alarm or .timeSensitive. .alarm additionally
+    ///      requires severe consequence, so a high score alone is never enough.
+    ///   3. The user has left the matching toggle on.
+    ///
+    /// Fires at `actBy`, which for anything needing preparation is earlier than
+    /// the event itself. That is the whole point.
+    private func scheduleAlarmIfEarned(for event: OlanaEvent) async {
+        guard let semantics = event.cachedSemantics,
+              let result = UrgencyCombiner.score(semantics: semantics, start: event.start)
+        else { return }
+
+        let allowed: Bool
+        switch result.tier {
+        case .alarm:         allowed = settings.urgentAlarmsEnabled
+        case .timeSensitive: allowed = settings.soonAlarmsEnabled
+        case .notification, .silent: return   // never an alarm
         }
-        // Skip alarm if event falls in quiet hours and the user hasn't exempted alarms.
-        let alarmBlockedByQuiet = settings.quietHoursEnabled
-            && isInQuietHours(event.start)
+        guard allowed else { return }
+
+        // Quiet hours are checked against the moment it would actually ring.
+        let blockedByQuiet = settings.quietHoursEnabled
+            && isInQuietHours(result.actBy)
             && !settings.alarmKitExemptFromQuietHours
-        if alarmKitEnabled && !alarmBlockedByQuiet {
-            await AlarmKitManager.shared.scheduleAlarm(for: event)
-        }
+        guard !blockedByQuiet else { return }
+
+        // A prep-advanced alarm rings at a time the event itself does not explain,
+        // so the label has to carry the reason or it reads as a malfunction.
+        let label = result.advancedByPrep ? "Start: \(event.title)" : event.title
+
+        await AlarmKitManager.shared.scheduleAlarm(for: event, at: result.actBy, label: label)
     }
 
     // MARK: - Cancel Notifications
 
     func cancelNotifications(for eventId: UUID) async {
-        guard let record = scheduledRecords[eventId] else { return }
-        center.removePendingNotificationRequests(withIdentifiers: record.notificationIds)
-        scheduledRecords.removeValue(forKey: eventId)
-        saveRecords()
-        removeFromUpcomingCache(eventId: eventId)
+        if let record = scheduledRecords[eventId] {
+            center.removePendingNotificationRequests(withIdentifiers: record.notificationIds)
+            scheduledRecords.removeValue(forKey: eventId)
+            saveRecords()
+            removeFromUpcomingCache(eventId: eventId)
+        }
+        // Not gated on a notification record: an alarm or Live Activity can
+        // exist without one, and must not outlive its event.
         await endLiveActivity(for: eventId)
         await AlarmKitManager.shared.cancelAlarm(for: eventId)
     }

@@ -1,0 +1,11 @@
+# Titles for the time sweep. The hours column is ignored in --sweep mode.
+Math homework due | 0 | School
+Board meeting | 0 | Work
+Board game night with friends | 0 | Personal
+Presentation to the board | 0 | Work
+Dentist appointment | 0 | Health
+Flight to Chicago | 0 | Travel
+Gym | 0 | Fitness
+Rent due | 0 | Admin
+Coffee with Sarah | 0 | Personal
+Final exam | 0 | School

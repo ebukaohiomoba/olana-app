@@ -1,0 +1,32 @@
+# None of these titles appear in the instructions, the examples, or any earlier test file.
+# Informational, no action required (never used the word "payday" here)
+Direct deposit posts | 44 |
+Subscription renews | 44 |
+Bonus lands | 44 |
+# Holidays that are not Christmas
+Diwali | 44 |
+Eid al-Fitr | 44 |
+Juneteenth | 44 |
+# Interviews without the word "interview"
+Panel round with Stripe | 44 | Work
+Chat with hiring manager | 44 | Work
+Onsite loop | 44 | Work
+# Deliverables without the word "due"
+Slides for the offsite | 44 | Work
+Peer review write-up | 44 | School
+Pitch deck v3 | 44 | Work
+# Attendance-only medical that is not "dentist"
+Ortho adjustment | 44 | Health
+Allergy shot | 44 | Health
+Follow-up with Dr. Kim | 44 | Health
+# Prep-heavy social that is not "dinner party"
+Potluck, bringing jollof | 44 | Personal
+Baby shower I am hosting | 44 | Personal
+# Low-signal titles from a real work calendar
+Sprint review | 44 | Work
+Retro | 44 | Work
+1:1 with Marcus | 44 | Work
+Blocked | 44 | Work
+Hold | 44 | Work
+OOO | 44 | Work
+Sync | 44 | Work
