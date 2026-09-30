@@ -127,3 +127,85 @@ struct SyncMergeTests {
         #expect(store.events.count == 1)
     }
 }
+
+// MARK: - Urgency precedence on sync
+
+@MainActor
+struct SyncUrgencyTests {
+
+    let day: TimeInterval = 86_400
+    let window: (start: Date, end: Date)
+    let store: EventStore
+
+    init() {
+        let today = Calendar.current.startOfDay(for: Date())
+        window = (today, today.addingTimeInterval(90 * 86_400))
+        store = EventStore(container: Persistence(inMemory: true).container)
+    }
+
+    /// Mirrors CalendarSyncEngine.normalise: placeholder urgency, or the
+    /// calendar's setting as a calendar override.
+    private func synced(_ title: String, calendarSetting: EventUrgency? = nil) -> OlanaEvent {
+        let start = window.start.addingTimeInterval(day + 3600)
+        let e = OlanaEvent(title: title, start: start, end: start.addingTimeInterval(3600),
+                           urgency: CalendarSyncEngine.unjudgedUrgency,
+                           externalCalendarId: "apple", externalEventId: "x")
+        if let calendarSetting {
+            e.urgency = calendarSetting
+            e.urgencyOverrideRaw = calendarSetting.rawValue
+            e.urgencyOverrideFromCalendar = true
+        }
+        return e
+    }
+
+    private func sync(_ e: OlanaEvent) {
+        store.syncExternalCalendarEvents(source: "apple", from: window.start,
+                                         to: window.end, events: [e])
+    }
+
+    // Severe + fixed, ~25h out: the model alone would say Critical.
+    private let severe = EventSemantics(consequence: .severe, movability: .fixed,
+                                        requiresPreparation: false, prepNeed: .none,
+                                        category: .travel)
+
+    @Test func importDoesNotGuessFromKeywords() {
+        sync(synced("Final exam"))
+        #expect(store.events[0].urgency == CalendarSyncEngine.unjudgedUrgency)
+    }
+
+    @Test func calendarSettingBeatsTheModel() {
+        sync(synced("Flight to Lagos", calendarSetting: .low))
+        store.events[0].applySemantics(severe)
+        #expect(store.events[0].urgency == .low)
+
+        sync(synced("Flight to Lagos", calendarSetting: .low))
+        #expect(store.events[0].urgency == .low)
+    }
+
+    @Test func removingCalendarSettingHandsBackToTheModel() {
+        sync(synced("Flight to Lagos", calendarSetting: .low))
+        store.events[0].applySemantics(severe)
+
+        sync(synced("Flight to Lagos"))
+        #expect(store.events[0].urgencyOverrideRaw == nil)
+        #expect(store.events[0].urgency == .high)
+    }
+
+    @Test func usersOwnChoiceSurvivesSyncAndCalendarSetting() {
+        sync(synced("Flight to Lagos"))
+        let e = store.events[0]
+        e.applySemantics(severe)
+        store.updateEvent(id: e.id, title: e.title, start: e.start, end: e.end, urgency: .low)
+        #expect(store.events[0].urgency == .low)
+
+        sync(synced("Flight to Lagos", calendarSetting: .medium))
+        #expect(store.events[0].urgency == .low)
+    }
+
+    @Test func pickedUrgencyOnCaptureIsNotReplacedByTheModel() {
+        let start = Date().addingTimeInterval(day)
+        store.addEvent(title: "Flight to Lagos", start: start, end: start.addingTimeInterval(3600),
+                       urgency: .low, semantics: severe, userPickedUrgency: true)
+        #expect(store.events[0].urgency == .low)
+    }
+}

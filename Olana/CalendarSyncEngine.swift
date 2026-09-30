@@ -2,8 +2,8 @@
 //  CalendarSyncEngine.swift
 //  Olana
 //
-//  Pure functions for normalising EKEvents into OlanaEvent, auto-assigning urgency,
-//  and deduplicating events from multiple sources. No state — all methods are static.
+//  Pure functions for normalising EKEvents into OlanaEvent, applying calendar
+//  urgency settings, and deduplicating events from multiple sources. No state — all methods are static.
 //
 
 import Foundation
@@ -11,56 +11,25 @@ import EventKit
 
 enum CalendarSyncEngine {
 
-    // MARK: - Keyword List (urgency auto-assign)
+    // MARK: - Urgency on import
 
-    private static let criticalKeywords: [String] = [
-        "deadline", "interview", "presentation", "exam", "surgery",
-        "flight", "final", "urgent", "critical", "demo", "launch",
-        "due", "submit", "defend", "pitch"
-    ]
+    /// Urgency shown for a synced event before the model has judged it. A
+    /// placeholder, not a judgement: the model replaces it during backfill.
+    /// There are deliberately no keyword rules here. Ranking comes from Apple
+    /// Intelligence or not at all.
+    static let unjudgedUrgency: EventUrgency = .medium
 
-    // MARK: - Urgency Assignment
-
-    /// Assigns EventUrgency to an EKEvent using the first-match priority chain:
-    ///   1. Per-calendar override on UserCalendar
-    ///   2. All-day → .low (background)
-    ///   3. Title contains critical keyword → .high
-    ///   4. Today, within 3 hours → .high
-    ///   5. Today, more than 3 hours away → .medium
-    ///   6. Tomorrow or this week → .medium
-    ///   7. Everything else → .low
-    static func assignUrgency(
-        to event: EKEvent,
-        userCalendars: [UserCalendar]
-    ) -> EventUrgency {
-        let calID = event.calendar.calendarIdentifier
-
-        // 1. Per-calendar override
-        if let override = userCalendars.first(where: { $0.calendarID == calID })?.urgencyOverride {
-            return override
+    /// Applies the calendar's urgency setting, if the user chose one, as an
+    /// override the model cannot replace. Otherwise the unjudged placeholder.
+    private static func applyImportUrgency(to event: OlanaEvent, calendarID: String,
+                                           userCalendars: [UserCalendar]) {
+        if let override = userCalendars.first(where: { $0.calendarID == calendarID })?.urgencyOverride {
+            event.urgency = override
+            event.urgencyOverrideRaw = override.rawValue
+            event.urgencyOverrideFromCalendar = true
+        } else {
+            event.urgency = unjudgedUrgency
         }
-
-        // 2. All-day → background
-        if event.isAllDay { return .low }
-
-        // 3. Keyword match
-        let lower = (event.title ?? "").lowercased()
-        if criticalKeywords.contains(where: { lower.contains($0) }) { return .high }
-
-        // 4–7. Time-based
-        let now   = Date()
-        let cal   = Calendar.current
-        let start = event.startDate ?? now
-
-        if cal.isDateInToday(start) {
-            let hoursUntil = start.timeIntervalSince(now) / 3600
-            return hoursUntil <= 3 ? .high : .medium
-        }
-        if cal.isDateInTomorrow(start) { return .medium }
-        if let days = cal.dateComponents([.day], from: now, to: start).day, days <= 7 {
-            return .medium
-        }
-        return .low
     }
 
     // MARK: - Normalise
@@ -70,7 +39,6 @@ enum CalendarSyncEngine {
         ekEvent: EKEvent,
         userCalendars: [UserCalendar]
     ) -> OlanaEvent {
-        let urgency = assignUrgency(to: ekEvent, userCalendars: userCalendars)
         let start   = ekEvent.startDate ?? Date()
         let end     = ekEvent.endDate   ?? start.addingTimeInterval(3600)
 
@@ -78,7 +46,7 @@ enum CalendarSyncEngine {
             title:              ekEvent.title ?? "Untitled",
             start:              start,
             end:                end,
-            urgency:            urgency,
+            urgency:            unjudgedUrgency,
             recurrenceRule:     .none,
             externalCalendarId: "apple",
             externalEventId:    ekEvent.eventIdentifier,
@@ -90,6 +58,8 @@ enum CalendarSyncEngine {
         )
         event.syncedAt         = Date()
         event.sourceModifiedAt = ekEvent.lastModifiedDate
+        applyImportUrgency(to: event, calendarID: ekEvent.calendar.calendarIdentifier,
+                           userCalendars: userCalendars)
         return event
     }
 
@@ -129,19 +99,11 @@ enum CalendarSyncEngine {
                    ?? start
         let isAllDay = gEvent.start.date != nil   // date-only field = all-day
 
-        let urgency = assignUrgencyGoogle(
-            title:      gEvent.summary ?? "",
-            start:      start,
-            isAllDay:   isAllDay,
-            calendarID: calendarEntry.id,
-            userCalendars: userCalendars
-        )
-
         let event = OlanaEvent(
             title:              gEvent.summary ?? "Untitled",
             start:              start,
             end:                end,
-            urgency:            urgency,
+            urgency:            unjudgedUrgency,
             recurrenceRule:     .none,
             externalCalendarId: "google",
             externalEventId:    gEvent.id,
@@ -152,32 +114,8 @@ enum CalendarSyncEngine {
             calendarColorHex:   calendarEntry.backgroundColor
         )
         event.syncedAt = Date()
+        applyImportUrgency(to: event, calendarID: calendarEntry.id, userCalendars: userCalendars)
         return event
-    }
-
-    private static func assignUrgencyGoogle(
-        title: String,
-        start: Date,
-        isAllDay: Bool,
-        calendarID: String,
-        userCalendars: [UserCalendar]
-    ) -> EventUrgency {
-        if let override = userCalendars.first(where: { $0.calendarID == calendarID })?.urgencyOverride {
-            return override
-        }
-        if isAllDay { return .low }
-        let lower = title.lowercased()
-        if criticalKeywords.contains(where: { lower.contains($0) }) { return .high }
-        let now = Date()
-        let cal = Calendar.current
-        if cal.isDateInToday(start) {
-            return start.timeIntervalSince(now) / 3600 <= 3 ? .high : .medium
-        }
-        if cal.isDateInTomorrow(start) { return .medium }
-        if let days = cal.dateComponents([.day], from: now, to: start).day, days <= 7 {
-            return .medium
-        }
-        return .low
     }
 
     /// Parses a GEventDateTime that may carry either an RFC 3339 dateTime or a

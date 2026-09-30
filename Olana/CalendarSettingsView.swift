@@ -332,8 +332,16 @@ struct CalendarConsentSheet: View {
 
 private struct CalendarRow: View {
     @Environment(\.olanaTheme) private var theme
+    @EnvironmentObject private var calendarManager: CalendarIntegrationManager
     let calendar: UserCalendar
     let dataStore: CalendarDataStore
+
+    /// Saves the calendar's urgency setting and re-syncs, so events already
+    /// imported from it pick the change up now rather than at the next full sync.
+    private func setOverride(_ urgency: EventUrgency?) {
+        dataStore.setUrgencyOverride(urgency, forCalendarID: calendar.calendarID)
+        Task { await calendarManager.performFullSync() }
+    }
 
     @State private var showingOverridePicker = false
 
@@ -358,12 +366,12 @@ private struct CalendarRow: View {
             // Urgency override menu
             Menu {
                 Button("Auto-assign") {
-                    dataStore.setUrgencyOverride(nil, forCalendarID: calendar.calendarID)
+                    setOverride(nil)
                 }
                 Divider()
                 ForEach([EventUrgency.high, .medium, .low], id: \.self) { urgency in
                     Button("Always \(urgency.displayName)") {
-                        dataStore.setUrgencyOverride(urgency, forCalendarID: calendar.calendarID)
+                        setOverride(urgency)
                     }
                 }
             } label: {

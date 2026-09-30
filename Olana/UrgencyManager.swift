@@ -255,11 +255,24 @@ public extension OlanaEvent {
         semTitle        = title
         semFailures     = nil
 
-        // Keep the legacy field in sync so existing UI, notification profiles and
-        // AlarmKit tiers keep reading one value. User overrides still win via
-        // `effectiveUrgency`, which is untouched.
-        if let r = UrgencyCombiner.score(semantics: s, start: start) {
-            urgency = r.urgency
+        refreshUrgency()
+    }
+
+    /// Keep `urgency` equal to what the app should act on.
+    ///
+    /// Most of the app (rows, notification profiles, Live Activities) reads
+    /// `urgency` directly, not `effectiveUrgency`. So an override has to be
+    /// written into `urgency` itself, or the model's judgement silently wins
+    /// over the user's choice everywhere except the calendar grid.
+    ///
+    /// Order: an override (the user's, or their calendar setting), then the
+    /// model's judgement scored for now. With neither, `urgency` is left alone.
+    func refreshUrgency(now: Date = Date()) {
+        if let override = urgencyOverrideRaw.flatMap(EventUrgency.init(rawValue:)) {
+            urgency = override
+        } else if let semantics = cachedSemantics,
+                  let result = UrgencyCombiner.score(semantics: semantics, start: start, now: now) {
+            urgency = result.urgency
         }
     }
 }

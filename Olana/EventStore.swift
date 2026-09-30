@@ -139,17 +139,17 @@ final class EventStore: ObservableObject {
                   userPickedUrgency: Bool = false) {
         let new = OlanaEvent(title: title, start: start, end: end, urgency: urgency, recurrenceRule: recurrenceRule, isTask: isTask)
 
-        if let semantics { new.applySemantics(semantics) }
-        // applySemantics derives urgency from the combiner, now or later during
-        // backfill. If the user chose one, that is the answer: store it as an
-        // override so neither path can overwrite it.
+        // If the user chose an urgency, that is the answer. Stored as an override
+        // before semantics are applied, so neither this nor a later backfill can
+        // replace it with the model's judgement.
         if userPickedUrgency { new.urgencyOverrideRaw = urgency.rawValue }
+        if let semantics { new.applySemantics(semantics) }
 
         context.insert(new)
         if recurrenceRule != .none {
             for occurrence in generateOccurrences(from: new, rule: recurrenceRule) {
-                if let semantics { occurrence.applySemantics(semantics) }
                 if userPickedUrgency { occurrence.urgencyOverrideRaw = urgency.rawValue }
+                if let semantics { occurrence.applySemantics(semantics) }
                 context.insert(occurrence)
             }
         }
@@ -218,6 +218,13 @@ final class EventStore: ObservableObject {
         event.end            = end
         event.urgency        = urgency
         event.recurrenceRule = recurrenceRule
+
+        // Changing urgency in the editor is the user overriding it. Record that,
+        // or the next sync or backfill puts the model's answer back.
+        if urgency != oldUrgency {
+            event.urgencyOverrideRaw = urgency.rawValue
+            event.urgencyOverrideFromCalendar = nil
+        }
 
         // If the recurrence rule changed, tear down the old series and rebuild.
         if recurrenceRule != oldRule {
@@ -477,13 +484,14 @@ private extension OlanaEvent {
 
     /// Copy what the source calendar owns from a freshly normalised copy.
     ///
-    /// Olana-owned state is left alone: id, completion, user override and cached
-    /// semantics. Semantics stay valid unless the title changed, which
-    /// `cachedSemantics` detects by itself.
+    /// Olana-owned state is left alone: id, completion, the user's own override
+    /// and cached semantics. Semantics stay valid unless the title changed,
+    /// which `cachedSemantics` detects by itself.
     ///
     /// Returns true when anything a reminder depends on changed.
     func mergeSynced(from incoming: OlanaEvent) -> Bool {
-        let reminderChanged = title != incoming.title
+        let oldUrgency = urgency
+        let timingChanged = title != incoming.title
             || start != incoming.start
             || end != incoming.end
             || isAllDay != incoming.isAllDay
@@ -500,16 +508,19 @@ private extension OlanaEvent {
         sourceModifiedAt = incoming.sourceModifiedAt
         syncedAt         = incoming.syncedAt
 
-        // Judged events keep the model's urgency, re-scored for the new time.
-        // Unjudged ones take whatever sync assigned.
-        if let semantics = cachedSemantics {
-            if let result = UrgencyCombiner.score(semantics: semantics, start: start) {
-                urgency = result.urgency
-            }
-        } else {
-            urgency = incoming.urgency
+        // The calendar's urgency setting follows the calendar: set, changed or
+        // removed there, it is set, changed or removed here. An override the user
+        // made on this event is theirs and sync never touches it.
+        let userOverride = urgencyOverrideRaw != nil && urgencyOverrideFromCalendar != true
+        if !userOverride {
+            urgencyOverrideRaw = incoming.urgencyOverrideRaw
+            urgencyOverrideFromCalendar = incoming.urgencyOverrideFromCalendar
+            // Not judged yet: show the placeholder sync assigned.
+            if urgencyOverrideRaw == nil && cachedSemantics == nil { urgency = incoming.urgency }
         }
-        return reminderChanged
+        refreshUrgency()
+
+        return timingChanged || urgency != oldUrgency
     }
 }
 

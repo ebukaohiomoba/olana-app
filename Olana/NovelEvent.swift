@@ -84,6 +84,10 @@ public final class OlanaEvent {
     public var calendarName: String? = nil       // e.g. "Personal", "Work"
     public var calendarColorHex: String? = nil   // e.g. "#FF3B30"
     public var urgencyOverrideRaw: Int? = nil    // user-set urgency, overrides auto-assign
+    /// True when the override came from the calendar's urgency setting rather
+    /// than from the user editing this event. Sync may update or clear a
+    /// calendar override; it never touches the user's own.
+    public var urgencyOverrideFromCalendar: Bool? = nil
     public var sourceModifiedAt: Date? = nil     // last-modified timestamp from source calendar
     public var syncedAt: Date? = nil             // when Olana last synced this event
     /// True for user-created tasks (reminder with a start time only, no meaningful duration).
