@@ -1,0 +1,125 @@
+# HELD-OUT calibration set: title | hours until start | calendar | expected bucket | expected alarm
+#
+# DO NOT tune the prompt against these. They exist to check that a prompt change
+# made on calib.txt generalises. If a title here is copied into the prompt's
+# examples, move it out of this file.
+#
+# Same rubric as calib.txt:
+#   Severe:   C within 48h, S within 14 days, L beyond.
+#   Moderate: S within 72h, L beyond. Never C.
+#   Minor or informational: always L.
+#   Needs work beforehand: measure from when the work has to START.
+#   Alarm: severe events only.
+# Bucket ? = genuinely debatable, not scored (the alarm column still is).
+# Alarm ?  = not scored.
+
+# ---------- Work: being interviewed (severe) ----------
+Final round with Notion | 30 | Work | C | y
+Recruiter screen - Datadog | 20 | Work | C | y
+Hiring manager call (Ramp) | 100 | Work | S | y
+Technical assessment due | 40 | Work | C | y
+Take-home assignment due | 150 | Work | S | y
+[Zoom] Interview — Senior Data Analyst @ Stripe | 20 | Work | C | y
+📞 Call w/ recruiter (Brex) | 30 | Work | C | y
+Certification exam (AWS) | 150 | Work | S | y
+Payroll submission deadline | 20 | Work | C | y
+
+# ---------- Work: routine, or you are the interviewer (moderate or minor) ----------
+Interview loop: candidate debrief | 6 | Work | S | n
+Phone screen: Sr. Analyst candidate | 30 | Work | S | n
+Hiring committee | 50 | Work | S | n
+Weekly 1:1 with manager | 20 | Work | S | n
+Skip-level with VP | 40 | Work | S | n
+Quarterly business review | 70 | Work | S | n
+Client kickoff call | 24 | Work | S | n
+Design review | 28 | Work | S | n
+FW: Q4 planning sync | 40 | Work | S | n
+mtg w/ legal re: contract | 30 | Work | S | n
+Expense report due | 50 | Work | S | n
+Performance self-review due | 80 | Work | S | n
+Quarterly OKR planning | 100 | Work | L | n
+Lunch and learn | 20 | Work | L | n
+Team happy hour | 30 | Work | L | n
+Canceled: Team sync | 5 | Work | L | n
+Pay period ends | 30 | Work | L | n
+
+# ---------- Health ----------
+Chemo infusion | 20 | Health | C | y
+Annual physical | 30 | Health | S | n
+Therapy session | 6 | Health | S | n
+Therapy w/ Dr. Patel | 30 | Health | S | n
+Psychiatrist appointment | 26 | Health | S | n
+Blood test (fasting) | 14 | Health | S | n
+🦷 dentist | 26 | Health | S | n
+Dr. appt | 50 | Health | S | n
+Colonoscopy | 50 | Health | S | ?
+MRI scan | 70 | Health | S | ?
+Eye exam | 100 | Health | L | n
+Vet appointment for Milo | 30 | Personal | S | n
+
+# ---------- Legal, money, official ----------
+Jury duty | 40 | Admin | C | y
+Lease signing | 26 | Admin | C | y
+Pay rent | 30 | Personal | C | y
+Mortgage payment due | 30 | Finance | C | y
+Credit card payment due | 100 | Finance | S | y
+Car registration expires | 200 | Admin | S | y
+Passport renewal appointment | 60 | Admin | S | y
+Immigration biometrics appointment | 90 | Admin | S | y
+Court-ordered mediation | 100 | Admin | S | y
+Quarterly estimated taxes due | 300 | Finance | S | y
+Parking ticket due | 150 | Admin | L | n
+
+# ---------- Family and personal ----------
+Pick up kids from school | 3 | Family | C | y
+Grandma's funeral | 40 | Family | C | ?
+Parent-teacher conference | 50 | Family | S | n
+IEP meeting for Sam | 50 | Family | S | ?
+Mom's birthday dinner | 30 | Family | S | n
+Best man speech | 72 | Personal | S | ?
+Dinner with parents | 20 | Family | ? | n
+Kid's soccer game | 26 | Family | ? | n
+Date night | 6 | Personal | ? | n
+Haircut | 20 | Personal | ? | n
+Call mom | 4 | Family | L | n
+Laundry | 3 | Personal | L | n
+Meal prep | 20 | Personal | L | n
+Water the plants | 5 | Personal | L | n
+Lunch | 3 | Personal | L | n
+Commute | 2 | Personal | L | n
+Trash day | 10 | Personal | L | n
+
+# ---------- Travel ----------
+Red-eye to SFO | 30 | Travel | C | y
+✈️ LHR → JFK | 40 | Travel | C | y
+Rental car pickup | 20 | Travel | S | n
+Hotel check-in | 10 | Travel | L | n
+
+# ---------- School ----------
+Midterm | 30 | School | C | y
+FAFSA deadline | 100 | School | S | y
+Scholarship application due | 70 | School | C | y
+Group project meeting | 26 | School | S | n
+Office hours | 20 | School | L | n
+Lecture: ECON 101 | 3 | School | ? | n
+Graduation ceremony | 150 | School | ? | n
+
+# ---------- Informational ----------
+Daylight saving time ends | 30 | Holidays | L | n
+Thanksgiving | 200 | Holidays in United States | L | n
+Mother's Day | 100 | Holidays | L | n
+Dad's birthday | 50 | Birthdays | L | n
+Payday 💰 | 20 | Personal | L | n
+Netflix subscription renews | 30 | Personal | L | n
+Library book due | 40 | Personal | ? | n
+
+# ---------- Placeholders ----------
+Focus time | 2 | Work | - | n
+Busy | 4 | Work | - | n
+Block | 3 | Work | - | n
+TBD | 30 | Work | - | n
+Do not book | 5 | Work | - | n
+Tentative hold | 10 | Work | - | n
+Out of office | 24 | Work | - | n
+Hold for travel | 20 | Work | - | n
+Personal | 3 | Personal | - | n

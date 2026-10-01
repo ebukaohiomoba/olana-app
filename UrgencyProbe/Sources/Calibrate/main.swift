@@ -23,7 +23,7 @@ struct Row {
     let title: String
     let hours: Double
     let cal: String?
-    let expected: String   // C S L -
+    let expected: String   // C S L -, or ? when the bucket is genuinely debatable (not scored)
     let alarm: String      // y n ?
 }
 
@@ -149,7 +149,7 @@ struct Tally { var right = 0, over = 0, under = 0, total = 0
 
 func tally(crit: Double, soon: Double) -> Tally {
     var t = Tally()
-    for s in scored where s.row.expected != "-" {
+    for s in scored where s.row.expected != "-" && s.row.expected != "?" {
         t.total += 1
         let got = bucket(s.score, crit: crit, soon: soon)
         if got == s.row.expected { t.right += 1 }
@@ -177,7 +177,7 @@ print(pad("EVENT", 34) + pad("IN", 6) + pad("CONSEQ", 9) + pad("MOVE", 10) + pad
 print(String(repeating: "-", count: 104))
 for s in scored {
     let got = bucket(s.score, crit: curC, soon: curS)
-    let bOK = got == s.row.expected
+    let bOK = got == s.row.expected || s.row.expected == "?"
     let aOK = s.row.alarm == "?" || (s.alarm == (s.row.alarm == "y"))
     let alarmCol = (s.alarm ? "yes" : "no") + (s.row.alarm == "?" ? "" : (aOK ? "" : " ✗"))
     print(pad(s.row.title, 34) + pad(hrs(s.row.hours), 6)
@@ -192,6 +192,7 @@ for s in scored {
 let cur = tally(crit: curC, soon: curS)
 let unrankedWanted = scored.filter { $0.row.expected == "-" }
 let unrankedRight = unrankedWanted.filter { $0.score == nil && $0.sem == nil }.count
+let rankedPlaceholders = unrankedWanted.filter { $0.sem != nil }.map(\.row.title)
 let alarmRows = scored.filter { $0.row.alarm != "?" }
 let falseAlarms = alarmRows.filter { $0.alarm && $0.row.alarm == "n" }
 let missedAlarms = alarmRows.filter { !$0.alarm && $0.row.alarm == "y" }
@@ -200,7 +201,7 @@ print("")
 print("SUMMARY")
 print(String(repeating: "=", count: 60))
 print("Buckets right        \(cur.right)/\(cur.total)  (\(f1(cur.pct))%)   too high \(cur.over), too low \(cur.under)")
-print("Placeholders skipped \(unrankedRight)/\(unrankedWanted.count)")
+print("Placeholders skipped \(unrankedRight)/\(unrankedWanted.count)  \(rankedPlaceholders.isEmpty ? "" : "ranked anyway: " + rankedPlaceholders.joined(separator: ", "))")
 print("False alarms         \(falseAlarms.count)/\(alarmRows.filter { $0.row.alarm == "n" }.count)  \(falseAlarms.map(\.row.title).joined(separator: ", "))")
 print("Missed alarms        \(missedAlarms.count)/\(alarmRows.filter { $0.row.alarm == "y" }.count)  \(missedAlarms.map(\.row.title).joined(separator: ", "))")
 print("Model failures       \(failures.count)  \(failures.joined(separator: ", "))")
@@ -261,7 +262,7 @@ if let oldDir {
     }
     var ml = Tally(), kw = Tally()
     var mlAlarmish = 0
-    for s in scored where s.row.expected != "-" {
+    for s in scored where s.row.expected != "-" && s.row.expected != "?" {
         let m = norm(CurrentImpl.predict(bucketModel: bucketModel, scoreModel: scoreModel,
                                          title: s.row.title, hoursUntil: s.row.hours)?.bucket ?? "low")
         let k = norm(CurrentImpl.keywordPath(title: s.row.title, hoursUntil: s.row.hours))
