@@ -512,10 +512,17 @@ class NotificationEngine: ObservableObject {
         setupNotificationCategories()
         guard isAuthorized, settings.allNotificationsEnabled else { return }
 
-        // Later tasks with "silent until escalated" skip scheduling entirely.
-        if event.urgency == .low && settings.silentUntilEscalated { return }
-
         await cancelNotifications(for: event.id)
+
+        // Later events with "silent until escalated" get no notifications yet.
+        // The alarm is decided separately: a severe event far enough out to be
+        // Later today still needs its alarm, and returning before the gate meant
+        // it never got one. Re-scoring on foreground reschedules notifications
+        // once it escalates.
+        if event.urgency == .low && settings.silentUntilEscalated {
+            await scheduleAlarmIfEarned(for: event)
+            return
+        }
 
         let profile = NotificationProfile.profile(for: event.urgency)
 
@@ -759,19 +766,21 @@ class NotificationEngine: ObservableObject {
     /// Three rules, all of which must hold:
     ///   1. Semantics exist. Without them we have no view on the event, and
     ///      guessing loudly is worse than staying quiet.
-    ///   2. The combiner rates it .alarm or .timeSensitive. .alarm additionally
-    ///      requires severe consequence, so a high score alone is never enough.
+    ///   2. The combiner's alarm plan says it earns one, judged as of when it
+    ///      would ring rather than now. .alarm requires severe consequence, so
+    ///      a high score alone is never enough.
     ///   3. The user has left the matching toggle on.
     ///
-    /// Fires at `actBy`, which for anything needing preparation is earlier than
-    /// the event itself. That is the whole point.
+    /// Rings when preparation has to start, which for anything needing it is
+    /// earlier than the event itself. That is the whole point.
     private func scheduleAlarmIfEarned(for event: OlanaEvent) async {
-        guard let semantics = event.cachedSemantics,
-              let result = UrgencyCombiner.score(semantics: semantics, start: event.start)
+        guard !event.completed,
+              let semantics = event.cachedSemantics,
+              let plan = UrgencyCombiner.alarmPlan(semantics: semantics, start: event.start)
         else { return }
 
         let allowed: Bool
-        switch result.tier {
+        switch plan.tier {
         case .alarm:         allowed = settings.urgentAlarmsEnabled
         case .timeSensitive: allowed = settings.soonAlarmsEnabled
         case .notification, .silent: return   // never an alarm
@@ -780,15 +789,15 @@ class NotificationEngine: ObservableObject {
 
         // Quiet hours are checked against the moment it would actually ring.
         let blockedByQuiet = settings.quietHoursEnabled
-            && isInQuietHours(result.actBy)
+            && isInQuietHours(plan.fireDate)
             && !settings.alarmKitExemptFromQuietHours
         guard !blockedByQuiet else { return }
 
         // A prep-advanced alarm rings at a time the event itself does not explain,
         // so the label has to carry the reason or it reads as a malfunction.
-        let label = result.advancedByPrep ? "Start: \(event.title)" : event.title
+        let label = plan.advancedByPrep ? "Start: \(event.title)" : event.title
 
-        await AlarmKitManager.shared.scheduleAlarm(for: event, at: result.actBy, label: label)
+        await AlarmKitManager.shared.scheduleAlarm(for: event, at: plan.fireDate, label: label)
     }
 
     // MARK: - Cancel Notifications

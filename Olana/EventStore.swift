@@ -79,6 +79,26 @@ final class EventStore: ObservableObject {
         }.map(\.event)
     }
 
+    /// Re-score judged upcoming events against the clock and store the result.
+    ///
+    /// Urgency rises as an event approaches, but it was only written when the
+    /// event was judged (and, for synced events, when a sync touched it). So a
+    /// flight judged a month out stayed Later on the screen and in its reminders.
+    /// Runs on every foreground through `backfillSemantics`. Returns events whose
+    /// urgency changed, so their reminders can be rebuilt for the new level.
+    @discardableResult
+    func refreshUrgencies(now: Date = Date()) -> [OlanaEvent] {
+        var changed: [OlanaEvent] = []
+        for event in events where !event.completed && event.start > now
+            && event.cachedSemantics != nil {
+            let old = event.urgency
+            event.refreshUrgency(now: now)
+            if event.urgency != old { changed.append(event) }
+        }
+        if !changed.isEmpty { try? context.save() }
+        return changed
+    }
+
     /// The single thing most worth attention right now, or nil when nothing is.
     /// A ranked list is still a list; for the people this app is for, the list is
     /// itself the overwhelm. This is what the home view should lead with.
@@ -102,7 +122,13 @@ final class EventStore: ObservableObject {
         // since the last pass. Events skipped while it was unavailable wait for this.
         UrgencyManager.shared.refresh()
         let populated = await UrgencyManager.shared.backfill(events: events, context: context, limit: limit)
+        let escalated = refreshUrgencies().filter { e in !populated.contains { $0.id == e.id } }
         rebuildHomeDisplayEvents()
+
+        // Escalated events were scheduled under their old urgency's profile.
+        for event in escalated {
+            await NotificationEngine.shared.scheduleNotifications(for: event)
+        }
 
         // Notifications were scheduled when these events arrived, before any
         // semantics existed, so the alarm gate saw nothing and declined. Now that

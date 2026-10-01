@@ -141,6 +141,43 @@ public enum UrgencyCombiner {
         return .silent
     }
 
+    // MARK: - Alarm plan
+
+    public struct AlarmPlan: Sendable, Equatable {
+        public let tier: AlertTier
+        /// When it rings: the moment preparation has to start, or the event itself.
+        public let fireDate: Date
+        /// True when it rings ahead of the event because work is needed first.
+        public let advancedByPrep: Bool
+    }
+
+    /// Whether an event earns an alarm, and when it should ring. nil when it does not.
+    ///
+    /// Judged as of the moment the alarm would ring, not the moment it is
+    /// scheduled. `tier` depends on the clock, so asking "is this alarm-worthy
+    /// right now?" days ahead always said no: a flight five days out scored 5.0,
+    /// got no alarm, and nothing asked again. At the moment of acting, time
+    /// pressure is at its peak, so this comes down to what the event is, which is
+    /// what should decide whether something may ring through Silent and Focus.
+    public static func alarmPlan(semantics: EventSemantics, start: Date,
+                                 now: Date = Date()) -> AlarmPlan? {
+        guard start > now else { return nil }
+
+        let prep = semantics.effectivePrep
+        let prepStart = start.addingTimeInterval(-prep.hours * 3600)
+        // If the time to start preparing has already passed, an alarm now would
+        // be a jolt about something they can no longer do on time. Ring for the
+        // event itself instead.
+        let advanced = prep != .none && prepStart > now
+        let fireDate = advanced ? prepStart : start
+
+        let scoreWhenActing = baseWeight(semantics.consequence, semantics.movability)
+            * timePressure(hoursUntil: 0) * 10
+        let t = tier(score: scoreWhenActing, semantics: semantics)
+        guard t >= .timeSensitive else { return nil }
+        return AlarmPlan(tier: t, fireDate: fireDate, advancedByPrep: advanced)
+    }
+
     // MARK: - Explanation
 
     /// One short line, because the reason has to be readable at a glance to be
