@@ -645,7 +645,10 @@ class NotificationEngine: ObservableObject {
             await scheduleLiveActivity(for: event)
         }
 
-        if settings.enableCalendarRedundancy {
+        // Synced events already live in a calendar with its own alerts. Copying
+        // one into the default calendar would sync back in as a new event, get
+        // scheduled, and be copied again.
+        if settings.enableCalendarRedundancy && !event.isFromExternalCalendar {
             await addCalendarAlarm(for: event)
         }
 
@@ -653,6 +656,100 @@ class NotificationEngine: ObservableObject {
         // wrong one gets the permission revoked in a single tap. So the gate is
         // deliberately narrow and everything about it fails closed.
         await scheduleAlarmIfEarned(for: event)
+    }
+
+    // MARK: - Synced event reminders
+
+    /// How far ahead synced events are kept scheduled. Short on purpose: iOS
+    /// keeps only the 64 soonest pending notifications per app, and a work
+    /// calendar can hold hundreds of events. Every sync tops the window up.
+    static let syncedReminderHorizon: TimeInterval = 48 * 3600
+
+    /// Minutes before a synced event that its basic reminder fires.
+    static let basicReminderLeadMinutes = 15
+
+    /// Makes sure every upcoming synced event in the horizon has reminders.
+    ///
+    /// Events whose urgency is a real answer (judged by the model, or set by
+    /// the user or their calendar setting) get their full reminders. Events
+    /// still showing the sync placeholder get one basic reminder, so nothing
+    /// is silent while it waits to be judged, or forever on a phone without
+    /// Apple Intelligence. Backfill replaces the basic one once it judges.
+    ///
+    /// Skips anything already scheduled, so calling it on every sync is cheap.
+    func topUpSyncedReminders(for events: [OlanaEvent]) async {
+        guard isAuthorized, settings.allNotificationsEnabled else { return }
+        let now = Date()
+        let horizon = now.addingTimeInterval(Self.syncedReminderHorizon)
+
+        for event in events where event.isFromExternalCalendar
+            && !event.completed && !event.isAllDay
+            && event.start > now && event.start < horizon
+            && scheduledRecords[event.id] == nil {
+            if event.hasPlaceholderUrgency {
+                await scheduleBasicReminder(for: event, now: now)
+            } else {
+                await scheduleNotifications(for: event)
+            }
+        }
+    }
+
+    /// One plain reminder shortly before the event, the way a calendar app
+    /// would. Deliberately outside the daily cap: the cap is counted when
+    /// reminders are scheduled, so a busy synced calendar would otherwise use
+    /// it up and starve the events that actually matter.
+    private func scheduleBasicReminder(for event: OlanaEvent, now: Date) async {
+        let lead = Self.basicReminderLeadMinutes
+        var fireDate = event.start.addingTimeInterval(-Double(lead) * 60)
+        if fireDate <= now {
+            // Already inside the lead window: tell them now, unless it is
+            // about to start anyway.
+            guard event.start.timeIntervalSince(now) > 60 else { return }
+            fireDate = now.addingTimeInterval(5)
+        }
+        // Moving a 15-minute reminder to the end of quiet hours would land it
+        // after the event. Skip it instead.
+        if settings.quietHoursEnabled && isInQuietHours(fireDate) { return }
+
+        let fmt = DateFormatter()
+        fmt.timeStyle = .short
+        fmt.dateStyle = .none
+
+        let id = "olana:\(event.id.uuidString):0"
+        let content = UNMutableNotificationContent()
+        content.title              = event.title
+        content.subtitle           = fireDate > now.addingTimeInterval(60) ? "in \(lead) minutes" : "starting soon"
+        content.body               = "Starts at \(fmt.string(from: event.start))."
+        content.sound              = .default
+        content.threadIdentifier   = event.id.uuidString
+        content.categoryIdentifier = "EVENT_\(urgencyString(event.urgency).uppercased())"
+        content.userInfo           = [
+            "eventId":           event.id.uuidString,
+            "urgency":           event.urgency.rawValue,
+            "notificationIndex": 0
+        ]
+
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: fireDate)
+        let request = UNNotificationRequest(
+            identifier: id, content: content,
+            trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        )
+        do {
+            try await center.add(request)
+        } catch {
+            print("❌ NotificationEngine: Failed to schedule basic reminder: \(error)")
+            return
+        }
+
+        scheduledRecords[event.id] = ScheduledNotificationRecord(
+            eventId:         event.id,
+            urgency:         event.urgency,
+            notificationIds: [id],
+            scheduledAt:     Date(),
+            eventStartTime:  event.start
+        )
+        saveRecords()
+        updateUpcomingCache(add: event)
     }
 
     // MARK: - AlarmKit gate
@@ -1288,5 +1385,16 @@ class NotificationEngine: ObservableObject {
 extension Notification.Name {
     static let eventMarkedDone = Notification.Name("eventMarkedDone")
     static let eventSnoozed    = Notification.Name("eventSnoozed")
+}
+
+// MARK: - Placeholder urgency
+
+extension OlanaEvent {
+    /// True while `urgency` is only the value sync assigned on import: nobody,
+    /// neither the model nor the user nor their calendar setting, has said how
+    /// urgent this is. Such events get a basic reminder, not an urgency profile.
+    var hasPlaceholderUrgency: Bool {
+        isFromExternalCalendar && cachedSemantics == nil && urgencyOverrideRaw == nil
+    }
 }
 

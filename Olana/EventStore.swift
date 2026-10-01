@@ -409,21 +409,25 @@ final class EventStore: ObservableObject {
         saveAndRefresh()
 
         // Reminders for a removed or changed event were scheduled against its old
-        // time and title. Cancel them. Changed events that still have semantics
-        // are rescheduled now; a changed title has lost its semantics and is
-        // rescheduled by backfill once it has been judged again.
+        // time, title or urgency. Cancel them. The top-up then reschedules
+        // whatever in the next 48 hours is left without reminders, new events
+        // included. Changed events further out that already have a real
+        // urgency are rescheduled directly, since the top-up will not reach them.
         let removedIds = removed.map(\.id)
         let changedEvents = changed
         Task {
+            let engine = NotificationEngine.shared
             for id in removedIds {
-                await NotificationEngine.shared.cancelNotifications(for: id)
+                await engine.cancelNotifications(for: id)
             }
             for event in changedEvents {
-                await NotificationEngine.shared.cancelNotifications(for: event.id)
-                if !event.completed, event.cachedSemantics != nil {
-                    await NotificationEngine.shared.scheduleNotifications(for: event)
+                await engine.cancelNotifications(for: event.id)
+                if !event.completed, !event.hasPlaceholderUrgency,
+                   event.start.timeIntervalSinceNow >= NotificationEngine.syncedReminderHorizon {
+                    await engine.scheduleNotifications(for: event)
                 }
             }
+            await engine.topUpSyncedReminders(for: self.events)
         }
     }
 

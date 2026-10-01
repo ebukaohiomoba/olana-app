@@ -209,3 +209,35 @@ struct SyncUrgencyTests {
         #expect(store.events[0].urgency == .low)
     }
 }
+
+// MARK: - Which reminder a synced event gets
+
+struct PlaceholderUrgencyTests {
+
+    private func event(external: Bool) -> OlanaEvent {
+        let start = Date().addingTimeInterval(3600)
+        return OlanaEvent(title: "Quarterly planning", start: start, end: start.addingTimeInterval(3600),
+                          urgency: .medium, externalCalendarId: external ? "google" : nil,
+                          externalEventId: external ? "g1" : nil)
+    }
+
+    @Test func unjudgedSyncedEventIsPlaceholder() {
+        #expect(event(external: true).hasPlaceholderUrgency)
+    }
+
+    @Test func nativeEventIsNeverPlaceholder() {
+        #expect(!event(external: false).hasPlaceholderUrgency)
+    }
+
+    @Test func judgedOrOverriddenIsNotPlaceholder() {
+        let judged = event(external: true)
+        judged.applySemantics(EventSemantics(consequence: .moderate, movability: .difficult,
+                                             requiresPreparation: false, prepNeed: .none,
+                                             category: .work))
+        #expect(!judged.hasPlaceholderUrgency)
+
+        let overridden = event(external: true)
+        overridden.urgencyOverrideRaw = EventUrgency.low.rawValue
+        #expect(!overridden.hasPlaceholderUrgency)
+    }
+}
