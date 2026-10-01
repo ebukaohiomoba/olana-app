@@ -1,0 +1,111 @@
+# Calibration set: title | hours until start | calendar | expected bucket | expected alarm
+#
+# These labels are PROPOSALS, written from the rubric below. Change any you
+# disagree with and re-run; the model's answers are cached, so it is instant.
+#
+# Bucket  C = Critical, S = Soon, L = Later, - = should not be ranked (placeholder)
+# Alarm   y / n, or ? when reasonable people would disagree (not scored)
+#
+# Rubric
+#   Severe (lost money, legal, health, a job or opportunity):
+#       C within 48h, S within 14 days, L beyond.
+#   Moderate (someone let down, a fee, hassle to rebook):
+#       S within 72h, L beyond. Never C: a work calendar full of red is noise.
+#   Minor or purely informational: always L.
+#   Needs work beforehand: measure from when the work has to START, not the event.
+#   Alarm: severe events only, at any distance.
+
+# ---------- Severe, same event at different distances ----------
+Flight to Chicago | 2 | Travel | C | y
+Flight to Chicago | 30 | Travel | C | y
+Flight to Chicago | 120 | Travel | S | y
+Flight to Chicago | 500 | Travel | L | y
+Interview with Google | 20 | Work | C | y
+Interview with Google | 96 | Work | S | y
+Rent due | 5 | Admin | C | y
+Rent due | 200 | Admin | S | y
+Court date | 40 | Admin | C | y
+Court date | 300 | Admin | S | y
+Tax filing | 30 | Admin | C | y
+Tax filing | 200 | Admin | S | y
+
+# ---------- Severe, no trigger word ----------
+Panel round with Stripe | 44 | Work | C | y
+Chat with hiring manager | 30 | Work | C | y
+Onsite loop | 150 | Work | S | y
+🦒Hightouch - Interview with Ju Lee | 44 | crohiomoba@gmail.com | C | y
+🦒Hightouch / Intro Call | 44 | crohiomoba@gmail.com | C | y
+Custody handoff | 6 | Family | C | y
+On-call shift | 10 | Work | C | y
+Visa appointment | 72 | Admin | S | y
+Closing on the house | 72 | Admin | S | y
+Surgery | 60 | Health | S | y
+
+# ---------- Severe with preparation ----------
+Final exam | 40 | School | C | y
+Final exam | 96 | School | S | y
+Bar exam | 200 | School | S | y
+Thesis defense | 120 | School | S | y
+Thesis proposal defense | 260 | School | S | y
+Pitch to investors | 48 | Work | C | y
+
+# ---------- Moderate ----------
+Dentist appointment | 1 | Health | S | n
+Dentist appointment | 20 | Health | S | n
+Dentist appointment | 120 | Health | L | n
+Team meeting | 4 | Work | S | n
+Performance review | 30 | Work | S | n
+Physical therapy | 50 | Health | S | n
+DMV | 26 | Admin | S | n
+Contractor visit | 8 | Personal | S | n
+Ortho adjustment | 20 | Health | S | n
+Allergy shot | 6 | Health | S | n
+Follow-up with Dr. Kim | 80 | Health | L | n
+A friend's wedding | 30 | Personal | S | n
+A friend's wedding | 300 | Personal | L | n
+Board meeting | 30 | Work | S | n
+Coffee with the CEO | 26 | Work | S | n
+Interview a candidate | 44 | Work | S | n
+Defensive driving class | 120 | Admin | L | n
+1:1 with Marcus | 8 | Work | S | n
+Sprint review | 20 | Work | S | n
+
+# ---------- Moderate with preparation ----------
+Slides for the offsite | 30 | Work | S | n
+Hosting dinner for 12 | 80 | Personal | S | n
+Math homework due | 20 | School | S | ?
+Math homework due | 110 | School | L | ?
+Draft due | 40 | School | S | ?
+Presentation to the board | 72 | Work | S | ?
+
+# ---------- Minor and informational ----------
+Gym | 1 | Fitness | L | n
+Gym | 30 | Fitness | L | n
+Coffee with Sarah | 3 | Personal | L | n
+Movie Night | 50 | Personal | L | n
+Netflix | 5 | Personal | L | n
+Board game night with friends | 30 | Personal | L | n
+Drinks at the bar | 20 | Personal | L | n
+Walk the dog | 2 | Personal | L | n
+Grocery run | 10 | Personal | L | n
+Standup comedy show | 16 | Personal | L | n
+Batting practice | 48 | Personal | L | n
+Fantasy football draft | 40 | Personal | L | n
+Concert | 400 | Personal | L | n
+Spider-Man: Brand New Day | 44 | Personal | L | n
+Wash bathroom | 56 | crohiomoba@gmail.com | L | n
+Clean my room | 24 | crohiomoba@gmail.com | L | n
+Payday | 44 | Personal | L | n
+Direct deposit posts | 44 | Personal | L | n
+Subscription renews | 20 | Personal | L | n
+Labor Day | 100 | Holidays in United States | L | n
+Diwali | 100 | Holidays | L | n
+Juneteenth | 30 | Holidays | L | n
+Isabelle's Birthday | 76 | Birthdays | L | n
+
+# ---------- Placeholders: should stay unranked ----------
+Standup | 2 | Work | - | n
+Hold | 5 | Work | - | n
+OOO | 30 | Work | - | n
+Blocked | 3 | Work | - | n
+Sync | 2 | Work | - | n

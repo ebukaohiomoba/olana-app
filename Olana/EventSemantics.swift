@@ -102,13 +102,19 @@ public enum EventSemanticsPrompt {
     /// prose-only instructions produced refusals on tax and legal titles and
     /// collapsed almost everything to "moderate". Anchored examples removed the
     /// refusals entirely and restored the spread.
+    ///
+    /// Wording here is checked by the system safety filter on every request, and
+    /// the filter changes between OS releases. On macOS 27 the phrase "legal
+    /// trouble" alone made 26 of 63 calibration titles fail, "Gym" and "Dentist
+    /// appointment" included. Run `swift run Calibrate` in UrgencyProbe after any
+    /// edit here or any OS update; watch the "Model failures" line.
     public static let instructions = """
     You classify calendar events so a planning app can decide how much attention each deserves.
     You get a short title and sometimes the name of the calendar it came from. Use the calendar
     name as context. Judge only from what the title plainly is.
 
     CONSEQUENCE — what happens if the person simply does not show up or does not do it.
-      severe   money lost, legal trouble, health harm, a job or opportunity gone, something
+      severe   money lost, an official obligation missed, health harm, a job or opportunity gone, something
                that cannot be recovered. Examples: Flight departure, Court date, Surgery,
                Final exam, Tax filing, Rent due, Visa appointment, Thesis defence, Closing
                on a house, On-call shift, Custody handoff, Bar exam.

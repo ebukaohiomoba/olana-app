@@ -44,7 +44,8 @@ public final class UrgencyManager: ObservableObject {
 
     /// Bump when EventSemanticsPrompt.instructions changes, to invalidate caches.
     /// 2: keyword fallback removed, so any semantics it produced are discarded.
-    public static let promptVersion = 2
+    /// 3: "legal trouble" reworded; it tripped the safety filter (see EventSemanticsPrompt).
+    public static let promptVersion = 3
 
     /// Failed extractions of the same title before it is left unranked for good.
     static let maxFailures = 3

@@ -18,6 +18,20 @@ let package = Package(
             ]
         ),
         .executableTarget(
+            name: "Calibrate",
+            path: "Sources/Calibrate",
+            swiftSettings: [
+                // EventSemantics.swift and UrgencyCombiner.swift are symlinks into
+                // the app, so this measures exactly what ships. The app builds in
+                // Swift 5 mode; match it.
+                .swiftLanguageMode(.v5),
+                .unsafeFlags([
+                    "-plugin-path",
+                    "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins"
+                ])
+            ]
+        ),
+        .executableTarget(
             name: "ExportCalendar",
             path: "Sources/ExportCalendar"
         )
