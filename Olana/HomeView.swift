@@ -126,16 +126,17 @@ struct HomeView: View {
 
     private func buildDay(now: Date) -> HomeDay {
         let cal = Calendar.current
-        let focusID = store.focusEvent?.id
-        // Today's events, plus the focus event wherever it falls.
+        // Today's events for the rail, plus anything still ahead for the card,
+        // which picks by earliest actionable moment wherever it falls.
         let inputs = store.events
-            .filter { cal.isDate($0.start, inSameDayAs: now) || $0.id == focusID }
+            .filter { cal.isDate($0.start, inSameDayAs: now) || ($0.end > now && !$0.completed) }
             .map { input($0, now: now) }
-        return HomeDayBuilder.build(inputs: inputs, focusID: focusID, now: now, bed: bedTime(now: now))
+        return HomeDayBuilder.build(inputs: inputs, now: now, bed: bedTime(now: now))
     }
 
     private func input(_ e: OlanaEvent, now: Date) -> HomeDayBuilder.Input {
-        let prep = e.cachedSemantics?.effectivePrep.hours ?? 0
+        let sem = e.cachedSemantics
+        let prep = sem?.effectivePrep.hours ?? 0
         return HomeDayBuilder.Input(
             id: e.id, title: e.title, start: e.start, end: e.end,
             isAllDay: e.isAllDay, isTask: e.isTask,
@@ -143,7 +144,19 @@ struct HomeView: View {
             isRecurring: e.recurrenceRule != .none,
             location: e.location, urgency: e.urgency,
             scored: UrgencyManager.shared.cachedScore(for: e, now: now),
-            prepHours: prep > 0 ? prep : nil)
+            prepHours: prep > 0 ? prep : nil,
+            assisted: Self.isAssisted(e, semantics: sem))
+    }
+
+    /// PRD §1.6: help runs for Moderate+ consequence. The user has the last
+    /// word: an urgency they set themselves decides instead. Assist modes
+    /// (Always Assist / No Execution Alerts) replace this check in M1-C.
+    static func isAssisted(_ e: OlanaEvent, semantics: EventSemantics?) -> Bool {
+        if let override = e.urgencyOverrideRaw.flatMap(EventUrgency.init(rawValue:)) {
+            return override != .low
+        }
+        guard let c = semantics?.consequence else { return false }
+        return c != .minor
     }
 
     /// Quiet-hours start today, used as "Bed around 10". nil when quiet hours are off.

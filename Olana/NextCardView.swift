@@ -50,6 +50,14 @@ struct NextCardView: View {
                     RunwayView(runway: r)
                         .padding(.top, 14)
                 }
+
+                if let next = card.secondary {
+                    Text(next)
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(c.muted)
+                        .lineLimit(2)
+                        .padding(.top, card.runway == nil ? 12 : 4)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .multilineTextAlignment(.leading)

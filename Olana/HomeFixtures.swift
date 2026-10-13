@@ -25,10 +25,12 @@ enum HomeFixtures {
 
     static func input(_ title: String, _ start: Date, _ end: Date, _ urgency: EventUrgency,
                       prepHours: Double? = nil, place: String? = nil,
-                      isTask: Bool = false, completed: Bool = false) -> HomeDayBuilder.Input {
+                      isTask: Bool = false, completed: Bool = false,
+                      assisted: Bool? = nil) -> HomeDayBuilder.Input {
         .init(id: UUID(), title: title, start: start, end: end, isAllDay: false,
               isTask: isTask, completed: completed, completedAt: nil, isRecurring: false,
-              location: place, urgency: urgency, scored: nil, prepHours: prepHours)
+              location: place, urgency: urgency, scored: nil, prepHours: prepHours,
+              assisted: assisted ?? (urgency != .low))
     }
 
     /// The mockup's Tuesday: two things done, client review at 3 with 40 min prep.
@@ -42,13 +44,13 @@ enum HomeFixtures {
             input("Gym", at(19, 0), at(20, 0), .low),
             input("Call mom", at(20, 30), at(21, 0), .low),
         ]
-        return HomeDayBuilder.build(inputs: inputs, focusID: review.id, now: at(13, 52), bed: at(22, 0))
+        return HomeDayBuilder.build(inputs: inputs, now: at(13, 52), bed: at(22, 0))
     }
 
     /// Saturday with nothing on it; the next thing that matters is Thursday.
     static func emptyDay() -> HomeDay {
         let review = input("Quarterly review", at(9, 0, dayOffset: 2), at(10, 0, dayOffset: 2), .high, prepHours: 2)
-        return HomeDayBuilder.build(inputs: [review], focusID: review.id, now: at(10, 15), bed: at(22, 0))
+        return HomeDayBuilder.build(inputs: [review], now: at(10, 15), bed: at(22, 0))
     }
 }
 

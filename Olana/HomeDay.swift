@@ -6,9 +6,10 @@
 //  Pure value types: no SwiftUI, no SwiftData writes, so every rule here can be
 //  checked against a fixed `now` (spec_m0_m1_v2 §14).
 //
-//  M1-B works from today's data only: urgency, `actBy` and start. M1-C adds
-//  leave, get-ready and join phases from EventAssist; the phase enum and the
-//  runway ticks are where they slot in.
+//  Card selection and the card line follow PRD v6 §3.6 and §1.7. M1-B has
+//  only prep and start: prepStartBy is `actBy` and prepDeadline is start until
+//  EventAssist (M1-C) adds effort, leave, get-ready and join. Those phases slot
+//  into `Phase`, `rank` and the runway ticks.
 //
 
 import Foundation
@@ -17,12 +18,13 @@ import Foundation
 
 struct NextCard: Equatable {
 
+    /// PRD v6 §3.6, in first-match order. M1-C adds join, on the way, leave,
+    /// get ready and leave by ahead of and between these.
     enum Phase: Equatable {
+        case prepNow           // Prep now · done by 3:00
+        case prepBy            // Start prepping by 2:20 / Prep today / Prep by tomorrow morning
+        case happeningNow      // Happening now · Room 2
         case startsAt          // Starts at 3:00
-        case happeningNow      // Happening now
-        case prepAt            // Start prepping at 2:20 (within 12 h)
-        case prepLater         // Prep today / Prep by tomorrow morning
-        case prepNow           // Prep now
     }
 
     struct Tick: Equatable {
@@ -48,6 +50,9 @@ struct NextCard: Equatable {
     /// nil when the runway would not say anything useful (start is > 12 h out,
     /// or the event is already under way).
     let runway: Runway?
+    /// The smaller second line: the next action after this one, when there is
+    /// one within 2 h (PRD v6 §1.7). "Next: Pick up prescription · starts at 5:30"
+    var secondary: String? = nil
 
     struct Runway: Equatable {
         let from: Date          // left edge; holds still so the fill advances
@@ -72,9 +77,16 @@ struct NextCard: Equatable {
         }
     }
 
-    /// "Client review, critical, 3:00 to 4:00" (spec §14.7: tier never by color alone).
+    /// The card's line as plain text: "Start prepping by 2:20".
+    var line: String { lead + gold + trail }
+
+    /// One element, title then line, as in PRD §3.15 ("Client review, leave by
+    /// 2:26, 14 minute walk"), then tier and time so tier is never color alone.
     var accessibilityLabel: String {
-        "\(title), \(HomeFormat.tierName(urgency)), \(HomeFormat.clock(start)) to \(HomeFormat.clock(end)). \(lead)\(gold)\(trail)"
+        var parts = [title, line.lowercasedFirst, HomeFormat.tierName(urgency),
+                     "\(HomeFormat.clock(start)) to \(HomeFormat.clock(end))"]
+        if let secondary { parts.append(secondary) }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -145,11 +157,14 @@ enum HomeDayBuilder {
         let scored: UrgencyCombiner.Result?
         /// Prep the model judged necessary, nil when none.
         let prepHours: Double?
+        /// Gets execution help (PRD §1.6): Moderate+ consequence, or the user
+        /// said it matters. Only assisted events can be on the card.
+        let assisted: Bool
     }
 
     static let runwayHorizon: TimeInterval = 12 * 3600
 
-    static func build(inputs: [Input], focusID: UUID?, now: Date,
+    static func build(inputs: [Input], now: Date,
                       bed: Date?, calendar: Calendar = .current) -> HomeDay {
         let today = inputs.filter { calendar.isDate($0.start, inSameDayAs: now) }
 
@@ -179,7 +194,7 @@ enum HomeDayBuilder {
             return a.start < b.start
         }
 
-        let card = pickCard(inputs: inputs, focusID: focusID, now: now, calendar: calendar)
+        let card = pickCard(inputs: inputs, now: now, calendar: calendar)
         let peek: NextCard? = {
             guard rail.isEmpty, let c = card, !calendar.isDate(c.start, inSameDayAs: now) else { return nil }
             return c
@@ -207,47 +222,108 @@ enum HomeDayBuilder {
 
     // MARK: Card
 
-    /// The event under way that matters, else the store's focus event.
-    /// Nothing when nothing qualifies: silence is a valid answer.
-    private static func pickCard(inputs: [Input], focusID: UUID?, now: Date,
-                                 calendar: Calendar) -> NextCard? {
-        let underway = inputs
-            .filter { !$0.isAllDay && !$0.isTask && !$0.completed
-                && $0.start <= now && $0.end > now && $0.urgency != .low }
-            .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
-            .first
-        if let e = underway { return card(e, now: now, calendar: calendar) }
+    /// Grace for events that are neither travel nor virtual: min(start + 10, end).
+    /// M1-C adds 20 min in person and 15 virtual.
+    static let otherGrace: TimeInterval = 10 * 60
 
-        guard let id = focusID, let e = inputs.first(where: { $0.id == id }) else { return nil }
-        return card(e, now: now, calendar: calendar)
+    /// Where an event stands right now, for selection and for its line.
+    struct Standing {
+        let phase: NextCard.Phase
+        /// Active phases come first (PRD §3.6). Lower is stronger.
+        let activeRank: Int?
+        /// For inactive events: the next actionable moment.
+        let moment: Date
     }
 
-    static func card(_ e: Input, now: Date, calendar: Calendar = .current) -> NextCard {
+    /// PRD v6 §3.6, first match wins. nil when done (completed, or past grace),
+    /// which drops the event off the card, no guilt.
+    static func standing(_ e: Input, now: Date) -> Standing? {
+        guard !e.completed, !e.isAllDay, !e.isTask else { return nil }
+        let grace = min(e.start.addingTimeInterval(otherGrace), e.end)
+        guard now <= grace else { return nil }
+
+        let prepDeadline = e.start                       // M1-C: getReadyAt / joinOpen
+        if let h = e.prepHours, h > 0, now < prepDeadline {
+            let prepStartBy = e.start.addingTimeInterval(-h * 3600)   // M1-C: min(actBy, deadline − effort)
+            if now >= prepStartBy {
+                // PREP NOW is active only when the deadline is within 12 h;
+                // further out it counts as an upcoming moment at the deadline
+                // (deadline − effort once effort exists).
+                let near = prepDeadline.timeIntervalSince(now) <= runwayHorizon
+                return Standing(phase: .prepNow, activeRank: near ? 4 : nil, moment: prepDeadline)
+            }
+            return Standing(phase: .prepBy, activeRank: nil, moment: prepStartBy)
+        }
+        if now >= e.start {
+            return Standing(phase: .happeningNow, activeRank: 5, moment: e.start)
+        }
+        return Standing(phase: .startsAt, activeRank: nil, moment: e.start)
+    }
+
+    /// Ranked candidates: active first (JOIN = LEAVE > ON THE WAY > GET READY >
+    /// PREP NOW > NOW), then the earliest upcoming moment, ties to the higher
+    /// urgency score. Only assisted events take part.
+    static func ranked(_ inputs: [Input], now: Date) -> [(Input, Standing)] {
+        inputs.compactMap { e -> (Input, Standing)? in
+            guard e.assisted, let s = standing(e, now: now) else { return nil }
+            return (e, s)
+        }
+        .sorted { a, b in
+            let (ea, sa) = a, (eb, sb) = b
+            switch (sa.activeRank, sb.activeRank) {
+            case let (x?, y?) where x != y: return x < y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil) where sa.moment != sb.moment: return sa.moment < sb.moment
+            default:
+                let (xa, xb) = (ea.scored?.score ?? 0, eb.scored?.score ?? 0)
+                return xa != xb ? xa > xb : ea.start < eb.start
+            }
+        }
+    }
+
+    /// The top candidate, with the next one as the secondary line when its
+    /// action is within 2 h. Nothing when nothing qualifies: silence is valid.
+    private static func pickCard(inputs: [Input], now: Date, calendar: Calendar) -> NextCard? {
+        let list = ranked(inputs, now: now)
+        guard let (top, standing) = list.first else { return nil }
+        var c = card(top, standing: standing, now: now, calendar: calendar)
+        if list.count > 1 {
+            let (next, ns) = list[1]
+            if ns.activeRank != nil || ns.moment.timeIntervalSince(now) <= 2 * 3600 {
+                let line = card(next, standing: ns, now: now, calendar: calendar).line
+                c.secondary = "Next: \(next.title) · \(line.lowercasedFirst)"
+            }
+        }
+        return c
+    }
+
+    static func card(_ e: Input, standing: Standing, now: Date,
+                     calendar: Calendar = .current) -> NextCard {
         let urgency = e.scored?.urgency ?? e.urgency
         let prepFrom: Date? = {
             guard let h = e.prepHours, h > 0 else { return nil }
             return e.start.addingTimeInterval(-h * 3600)
         }()
+        let place = e.location?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasPlace = !(place ?? "").isEmpty
 
-        let phase: NextCard.Phase
-        var lead = "", gold = ""
-        let trail = ""   // M1-C: " · done by 2:16"
-        if e.start <= now {
-            phase = .happeningNow
-            (lead, gold) = ("Happening ", "now")
-        } else if let p = prepFrom {
-            if p <= now {
-                phase = .prepNow
-                (lead, gold) = ("Prep ", "now")
-            } else if p.timeIntervalSince(now) <= runwayHorizon {
-                phase = .prepAt
-                (lead, gold) = ("Start prepping at ", HomeFormat.clock(p))
+        var lead = "", gold = "", trail = ""
+        switch standing.phase {
+        case .prepNow:
+            // M1-C adds "about 1 h," from the effort bucket.
+            (lead, gold, trail) = ("Prep ", "now", " · done by \(HomeFormat.clock(e.start))")
+        case .prepBy:
+            let p = standing.moment
+            if e.start.timeIntervalSince(now) <= runwayHorizon {      // deadline within 12 h
+                (lead, gold) = ("Start prepping by ", HomeFormat.clock(p))
             } else {
-                phase = .prepLater
                 (lead, gold) = HomeFormat.prepLater(p, now: now, calendar: calendar)
             }
-        } else {
-            phase = .startsAt
+        case .happeningNow:
+            (lead, gold) = ("Happening ", "now")
+            if hasPlace, let place { trail = " · \(place)" }
+        case .startsAt:
             if calendar.isDate(e.start, inSameDayAs: now) {
                 (lead, gold) = ("Starts at ", HomeFormat.clock(e.start))
             } else {
@@ -265,7 +341,7 @@ enum HomeDayBuilder {
 
         return NextCard(eventID: e.id, title: e.title, urgency: urgency,
                         start: e.start, end: e.end, place: e.location,
-                        phase: phase, lead: lead, gold: gold, trail: trail,
+                        phase: standing.phase, lead: lead, gold: gold, trail: trail,
                         detail: detail,
                         runway: runway(start: e.start, prepFrom: prepFrom, now: now))
     }
@@ -379,4 +455,5 @@ enum HomeFormat {
 
 extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+    var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
 }

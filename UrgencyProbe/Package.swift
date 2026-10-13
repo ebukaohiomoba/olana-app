@@ -44,6 +44,18 @@ let package = Package(
             ]
         ),
         .executableTarget(
+            name: "HomeChecks",
+            path: "Sources/HomeChecks",
+            swiftSettings: [
+                // HomeDay.swift is a symlink into the app; same setup as Calibrate.
+                .swiftLanguageMode(.v5),
+                .unsafeFlags([
+                    "-plugin-path",
+                    "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins"
+                ])
+            ]
+        ),
+        .executableTarget(
             name: "ExportCalendar",
             path: "Sources/ExportCalendar"
         )
