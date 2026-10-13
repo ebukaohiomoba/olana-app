@@ -84,9 +84,16 @@ enum HomeType {
     /// Never bold (§14.7). Falls back to the system serif if the font is missing.
     static let serifName = "Literata-72pt"
 
+    /// The L1 line scales with Dynamic Type up to this size. Past it, a
+    /// 30 pt display serif breaks words mid-line on a phone ("Start prep-
+    /// ping"); the rest of the screen keeps scaling.
+    static let serifMax: CGFloat = 48
+
     static func serif(size: CGFloat) -> Font {
+        let size = min(size, serifMax)
         if UIFont(name: serifName, size: size) != nil {
-            return .custom(serifName, size: size, relativeTo: .title)
+            // fixedSize: callers pass a size already scaled by @ScaledMetric.
+            return .custom(serifName, fixedSize: size)
         }
         return .system(size: size, weight: .regular, design: .serif)
     }

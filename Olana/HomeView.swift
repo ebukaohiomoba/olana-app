@@ -295,6 +295,7 @@ struct HomeScreenContent: View {
     var onDelete: (UUID, Bool) -> Void = { _, _ in }
 
     @Environment(\.homePalette) private var c
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -328,7 +329,11 @@ struct HomeScreenContent: View {
     }
 
     private var dateLabel: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        // Stacked at accessibility sizes so the day name never hyphenates.
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+        return layout {
             Text(day.now.formatted(.dateTime.weekday(.wide)))
                 .font(.headline)
                 .foregroundStyle(c.text)
@@ -350,6 +355,7 @@ private struct OpenDayView: View {
     var onSelect: (UUID) -> Void
 
     @Environment(\.homePalette) private var c
+    @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .title) private var l1Size: CGFloat = 33
 
     var body: some View {
@@ -357,6 +363,7 @@ private struct OpenDayView: View {
             (Text("Your day is ").foregroundStyle(c.text) + Text("open.").foregroundStyle(c.goldText))
                 .font(HomeType.serif(size: l1Size))
                 .tracking(-0.7)
+                .minimumScaleFactor(0.8)
                 .accessibilityAddTraits(.isHeader)
 
             Text(!day.done.isEmpty
@@ -369,17 +376,18 @@ private struct OpenDayView: View {
             if let peek = day.peek {
                 Button { onSelect(peek.eventID) } label: {
                     HStack(spacing: 12) {
+                        if !typeSize.isAccessibilitySize {
                         Image(systemName: "calendar")
                             .font(.system(size: 16))
                             .foregroundStyle(c.muted)
                             .frame(width: 32, height: 32)
                             .background(RoundedRectangle(cornerRadius: 10).fill(c.card2))
+                        }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(peek.title).font(.callout).foregroundStyle(c.text).lineLimit(1)
+                            Text(peek.title).font(.callout).foregroundStyle(c.text).lineLimit(3)
                             Text("\(HomeFormat.dayName(peek.start, now: day.now).capitalizedFirst) \(peek.start.formatted(date: .omitted, time: .shortened)) · next thing that matters")
                                 .font(.caption)
                                 .foregroundStyle(c.muted)
-                                .lineLimit(2)
                         }
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right")

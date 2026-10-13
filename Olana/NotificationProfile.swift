@@ -12,7 +12,6 @@
 import Foundation
 import UserNotifications
 import ActivityKit
-import BackgroundTasks
 @preconcurrency import EventKit
 import Combine
 
@@ -434,15 +433,6 @@ struct ScheduledNotificationRecord: Codable {
     }
 }
 
-// MARK: - Cached Event Record (persists across app restarts for background Live Activity)
-
-struct CachedEventRecord: Codable {
-    let id: UUID
-    let title: String
-    let start: Date
-    let urgencyRaw: Int   // 0=low, 1=medium, 2=high — mirrors EventUrgency.rawValue
-}
-
 // MARK: - Notification Engine
 
 @MainActor
@@ -642,11 +632,6 @@ class NotificationEngine: ObservableObject {
         )
         scheduledRecords[event.id] = record
         saveRecords()
-        updateUpcomingCache(add: event)
-        // Schedule a background wakeup so Live Activity can start even if the app is suspended.
-        if event.start.timeIntervalSinceNow < 24 * 3600 {
-            NotificationEngine.scheduleLiveActivityCheck()
-        }
 
         if profile.enableLiveActivity {
             await scheduleLiveActivity(for: event)
@@ -756,7 +741,6 @@ class NotificationEngine: ObservableObject {
             eventStartTime:  event.start
         )
         saveRecords()
-        updateUpcomingCache(add: event)
     }
 
     // MARK: - AlarmKit gate
@@ -807,7 +791,6 @@ class NotificationEngine: ObservableObject {
             center.removePendingNotificationRequests(withIdentifiers: record.notificationIds)
             scheduledRecords.removeValue(forKey: eventId)
             saveRecords()
-            removeFromUpcomingCache(eventId: eventId)
         }
         // Not gated on a notification record: an alarm or Live Activity can
         // exist without one, and must not outlive its event.
@@ -934,102 +917,6 @@ class NotificationEngine: ObservableObject {
                 return (uuid, pair.value)
             }
         )
-    }
-
-    // MARK: - Upcoming Event Cache (for background Live Activity)
-
-    private let upcomingCacheKey = "olana_upcoming_events_v1"
-
-    private func loadUpcomingCache() -> [String: CachedEventRecord] {
-        guard let data    = UserDefaults.standard.data(forKey: upcomingCacheKey),
-              let decoded = try? JSONDecoder().decode([String: CachedEventRecord].self, from: data)
-        else { return [:] }
-        return decoded
-    }
-
-    private func saveUpcomingCache(_ cache: [String: CachedEventRecord]) {
-        if let data = try? JSONEncoder().encode(cache) {
-            UserDefaults.standard.set(data, forKey: upcomingCacheKey)
-        }
-    }
-
-    private func updateUpcomingCache(add event: OlanaEvent) {
-        var cache = loadUpcomingCache()
-        cache[event.id.uuidString] = CachedEventRecord(
-            id: event.id, title: event.title,
-            start: event.start, urgencyRaw: event.urgency.rawValue
-        )
-        // Prune events that have already passed
-        let now = Date()
-        cache = cache.filter { $0.value.start > now }
-        saveUpcomingCache(cache)
-    }
-
-    private func removeFromUpcomingCache(eventId: UUID) {
-        var cache = loadUpcomingCache()
-        cache.removeValue(forKey: eventId.uuidString)
-        saveUpcomingCache(cache)
-    }
-
-    /// Start Live Activities for cached upcoming events that are inside the lead window.
-    /// Called by the BGAppRefreshTask so the countdown starts even when the app is suspended.
-    func startLiveActivitiesFromCache() {
-        guard #available(iOS 16.2, *) else { return }
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let now        = Date()
-        let leadWindow = Double(settings.liveActivityLeadMinutes) * 60
-        for (_, record) in loadUpcomingCache() {
-            let timeUntil = record.start.timeIntervalSince(now)
-            guard timeUntil > 0 && timeUntil <= leadWindow else { continue }
-
-            // Respect per-urgency Live Activity toggle
-            let enabled: Bool
-            switch record.urgencyRaw {
-            case 2:  enabled = settings.countdownTimerEnabled
-            case 1:  enabled = settings.soonLiveActivityEnabled
-            default: enabled = settings.laterLiveActivityEnabled
-            }
-            guard enabled else { continue }
-
-            // Skip if already running for this event
-            if Activity<OlanaEventAttributes>.activities.contains(where: { $0.attributes.eventId == record.id.uuidString }) {
-                continue
-            }
-
-            let attributes = OlanaEventAttributes(
-                eventId: record.id.uuidString, eventTitle: record.title, urgencyRaw: record.urgencyRaw
-            )
-            let state = OlanaEventAttributes.ContentState(
-                eventStart: record.start,
-                minutesRemaining: max(0, Int(timeUntil / 60)),
-                status: "upcoming"
-            )
-            do {
-                let activity = try Activity<OlanaEventAttributes>.request(
-                    attributes: attributes,
-                    content: ActivityContent(state: state, staleDate: record.start.addingTimeInterval(300)),
-                    pushType: nil
-                )
-                liveActivityIds[record.id] = activity.id
-                print("✅ NotificationEngine: Background Live Activity started for '\(record.title)'")
-            } catch {
-                print("❌ NotificationEngine: Background Live Activity failed — \(error.localizedDescription)")
-            }
-        }
-    }
-
-    /// Schedule a BGAppRefreshTask to wake the app before the next imminent event.
-    /// Safe to call repeatedly — submitting a duplicate identifier replaces the previous request.
-    static func scheduleLiveActivityCheck() {
-        let request = BGAppRefreshTaskRequest(identifier: "com.olana.liveActivityCheck")
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 5 * 60) // no sooner than 5 min
-        // Not try?: a missing "fetch" background mode makes this throw notPermitted,
-        // and swallowing it meant the task silently never ran.
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            print("❌ NotificationEngine: BGAppRefreshTask submit failed — \(error)")
-        }
     }
 
     // MARK: - Live Activity

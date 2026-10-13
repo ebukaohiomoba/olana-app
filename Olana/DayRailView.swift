@@ -22,7 +22,12 @@ struct DayRailView: View {
     var onDelete: (UUID, Bool) -> Void = { _, _ in }
 
     @Environment(\.homePalette) private var c
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showDone = false
+
+    /// At accessibility sizes the time leaves its 42 pt column and joins the
+    /// row's second line ("3:00 until 4:00"), so nothing truncates.
+    private var inlineTimes: Bool { typeSize.isAccessibilitySize }
 
     /// Points per minute: 44 pt an hour, as in the mockup.
     static let perMinute: CGFloat = 0.74
@@ -63,23 +68,32 @@ struct DayRailView: View {
     // MARK: Header
 
     private var header: some View {
-        HStack {
-            if !day.done.isEmpty {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { showDone.toggle() }
-                } label: {
-                    Text(day.doneLabel)
-                        .foregroundStyle(c.muted)
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint(showDone ? "Hides them" : "Shows them")
-            }
-            Spacer()
-            if let bed = day.bed {
-                Text(HomeFormat.bed(bed)).foregroundStyle(c.muted)
-            }
+        ViewThatFits(in: .horizontal) {
+            HStack { doneButton; Spacer(); bedLabel }
+            VStack(alignment: .leading, spacing: 4) { doneButton; bedLabel }
         }
         .font(.caption)
+    }
+
+    @ViewBuilder
+    private var doneButton: some View {
+        if !day.done.isEmpty {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showDone.toggle() }
+            } label: {
+                Text(day.doneLabel)
+                    .foregroundStyle(c.muted)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(showDone ? "Hides them" : "Shows them")
+        }
+    }
+
+    @ViewBuilder
+    private var bedLabel: some View {
+        if let bed = day.bed {
+            Text(HomeFormat.bed(bed)).foregroundStyle(c.muted)
+        }
     }
 
     private var doneList: some View {
@@ -112,6 +126,7 @@ struct DayRailView: View {
             Text("now")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(c.text)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .frame(width: 42, alignment: .trailing)
             ZStack {
                 Circle().fill(c.bg).frame(width: 18, height: 18)
@@ -162,7 +177,7 @@ struct DayRailView: View {
 
     private func eventRow(_ item: RailItem, height: CGFloat, prepAbove: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            Text(item.isOverdueTask ? "earlier" : HomeFormat.clock(item.start))
+            Text(inlineTimes ? "" : item.isOverdueTask ? "earlier" : HomeFormat.clock(item.start))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(c.muted)
                 .frame(width: 42, alignment: .trailing)
@@ -172,7 +187,7 @@ struct DayRailView: View {
                     .font(.callout)
                     .foregroundStyle(c.text)
                     .lineLimit(2)
-                Text(item.isTask ? "to do" : "until \(HomeFormat.clock(item.end))")
+                Text(secondLine(item))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(c.muted)
             }
@@ -212,9 +227,24 @@ struct DayRailView: View {
                 Label("Delete", systemImage: "trash")
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel(item))
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onSelect(item.id) }
+        // The done circle and the context menu aren't reachable inside one
+        // element, so VoiceOver gets them as actions.
+        .accessibilityActions {
+            if item.isTask {
+                Button("Mark done") { onToggleDone(item.id) }
+            }
+            Button("Delete") { onDelete(item.id, item.isRecurring) }
+        }
+    }
+
+    private func secondLine(_ item: RailItem) -> String {
+        if item.isTask { return inlineTimes && !item.isOverdueTask ? "\(HomeFormat.clock(item.start)), to do" : "to do" }
+        let until = "until \(HomeFormat.clock(item.end))"
+        return inlineTimes ? "\(HomeFormat.clock(item.start)) \(until)" : until
     }
 
     /// The rail's track, centered on the bar column.

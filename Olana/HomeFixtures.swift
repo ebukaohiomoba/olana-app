@@ -2,7 +2,8 @@
 //  HomeFixtures.swift
 //  Olana
 //
-//  DEBUG only. Launch with `-homeFixture full` (or `empty`) to open the new
+//  DEBUG only. Launch with `-homeFixture full` (or `empty`, or `rail` for the
+//  rail alone) to open the new
 //  home on fixed data at 1:52 PM, skipping login, so it can be checked against
 //  home_literata.html on any simulator. Set light or dark with
 //  `xcrun simctl ui booted appearance`.
@@ -71,8 +72,12 @@ struct HomeFixtureScreen: View {
 
         var body: some View {
             ScrollView {
-                HomeScreenContent(day: day, syncText: day.isOpen
-                                  ? .init(text: "Apple Calendar and Google synced 2 min ago", fresh: true) : nil)
+                if HomeFixtures.requested == "rail" {
+                    DayRailView(day: day).padding(.horizontal, 22)
+                } else {
+                    HomeScreenContent(day: day, syncText: day.isOpen
+                                      ? .init(text: "Apple Calendar and Google synced 2 min ago", fresh: true) : nil)
+                }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: OlanaTabBar.height - 20) }
             .background(c.bg.ignoresSafeArea())

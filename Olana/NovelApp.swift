@@ -6,7 +6,6 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
-import BackgroundTasks
 import FirebaseCore
 
 // MARK: - App Delegate
@@ -23,30 +22,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             NotificationEngine.shared.setupNotificationCategories()
         }
 
-        // Background Live Activity: wake the app before imminent events so the
-        // countdown appears on Lock Screen and Dynamic Island even when suspended.
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: "com.olana.liveActivityCheck",
-            using: nil
-        ) { task in
-            self.handleLiveActivityCheck(task as! BGAppRefreshTask)
-        }
-
         return true
-    }
-
-    private func handleLiveActivityCheck(_ task: BGAppRefreshTask) {
-        // Immediately reschedule so the next event is also covered.
-        NotificationEngine.scheduleLiveActivityCheck()
-
-        let work = Task { @MainActor in
-            NotificationEngine.shared.startLiveActivitiesFromCache()
-        }
-        task.expirationHandler = { work.cancel() }
-        Task {
-            await work.value
-            task.setTaskCompleted(success: true)
-        }
     }
 
     func userNotificationCenter(

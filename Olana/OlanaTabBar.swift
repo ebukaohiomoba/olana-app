@@ -71,6 +71,9 @@ struct OlanaTabBar: View {
             }
             .buttonStyle(.plain)
             .padding(.top, 5)
+            .accessibilityShowsLargeContentViewer {
+                Label("Add event", systemImage: "plus")
+            }
             .accessibilityLabel("Add event")
         }
         .frame(height: Self.height)
@@ -94,6 +97,11 @@ struct OlanaTabBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Like the system tab bar: fixed size, with the large content viewer
+        // (long-press) at accessibility text sizes.
+        .accessibilityShowsLargeContentViewer {
+            Label(tab.title, systemImage: tab.symbol)
+        }
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(on ? [.isSelected] : [])
     }

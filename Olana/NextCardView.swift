@@ -30,6 +30,7 @@ struct NextCardView: View {
                  + Text(card.trail).foregroundStyle(c.muted))
                     .font(HomeType.serif(size: l1Size))
                     .tracking(-0.7)
+                    .minimumScaleFactor(0.8)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 10)
@@ -48,6 +49,10 @@ struct NextCardView: View {
 
                 if let r = card.runway {
                     RunwayView(runway: r)
+                        // Ticks are placed by time, so large labels collide; they
+                        // stop growing at XXL. The L1 line already says the time,
+                        // and VoiceOver reads the runway's text equivalent.
+                        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                         .padding(.top, 14)
                 }
 
@@ -79,6 +84,7 @@ struct NextCardView: View {
 struct RunwayView: View {
     let runway: NextCard.Runway
     @Environment(\.homePalette) private var c
+    @ScaledMetric(relativeTo: .caption) private var tickHeight: CGFloat = 30
 
     var body: some View {
         VStack(spacing: 6) {
@@ -138,7 +144,7 @@ struct RunwayView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: 30)
+        .frame(height: tickHeight)
     }
 
     /// Drops the "now" label when the prep tick sits right on top of it.
