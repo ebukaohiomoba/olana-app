@@ -61,6 +61,11 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
+            name: "SyncChecks",
+            path: "Sources/SyncChecks",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
             name: "ExportCalendar",
             path: "Sources/ExportCalendar"
         )

@@ -5,7 +5,11 @@ import SwiftData
 
 @MainActor
 final class EventStore: ObservableObject {
+    /// Every event the user sees. Hidden iOS Calendar copies of events synced
+    /// directly from Google (`duplicateOf`) are left out (PRD §3.12).
     @Published private(set) var events: [OlanaEvent] = []
+    /// Everything stored, hidden duplicates included. Sync matches against this.
+    private(set) var allEvents: [OlanaEvent] = []
     /// Deduplicated list for HomeView — updated once per load(), not on every render.
     @Published private(set) var homeDisplayEvents: [OlanaEvent] = []
 
@@ -144,11 +148,12 @@ final class EventStore: ObservableObject {
         do {
             var descriptor = FetchDescriptor<OlanaEvent>(predicate: predicate, sortBy: sort)
             descriptor.fetchLimit = 0
-            events = try context.fetch(descriptor)
+            allEvents = try context.fetch(descriptor)
         } catch {
             print("Failed to fetch events: \(error)")
-            events = []
+            allEvents = []
         }
+        events = allEvents.filter { $0.duplicateOf == nil }
         rebuildHomeDisplayEvents()
     }
 
@@ -374,13 +379,9 @@ final class EventStore: ObservableObject {
     /// every foreground), completion, the user's urgency override, and the id that
     /// scheduled notifications and alarms are keyed on.
     ///
-    /// Matching runs in two passes:
-    ///   1. Source event id plus start time. EventKit gives every occurrence of a
-    ///      recurring series the same identifier, so the id alone is not unique.
-    ///   2. Source id alone, when exactly one stored event has that id and it is
-    ///      not before the window. This finds a single event that was moved in
-    ///      the source calendar, without letting a new occurrence of a yearly
-    ///      series take over last year's (completed) one.
+    /// Matching follows PRD §3.12 (see SyncMatcher.match): source id + start,
+    /// then iCalUID + occurrence date, then a lone source id for a moved
+    /// one-off event. A match keeps its OlanaEvent.id.
     ///
     /// Lookups span the whole source so an event moved into the window from
     /// outside it is updated rather than duplicated. Deletion is limited to the
@@ -391,52 +392,52 @@ final class EventStore: ObservableObject {
         to end: Date,
         events normalisedEvents: [OlanaEvent]
     ) {
-        let existing = events.filter { $0.externalCalendarId == source }
+        let existing = allEvents.filter { $0.externalCalendarId == source }
+        let now = Date()
 
-        var byIdAndStart: [String: OlanaEvent] = [:]
-        var byId: [String: [OlanaEvent]] = [:]
-        for event in existing {
-            guard let xid = event.externalEventId else { continue }
-            let key = Self.syncKey(xid, event.start)
-            if byIdAndStart[key] == nil { byIdAndStart[key] = event }
-            byId[xid, default: []].append(event)
-        }
+        // Which stored event each incoming one is (PRD §3.12; SyncMatcher).
+        let matches = SyncMatcher.match(existing: existing.map { ($0.id, $0.syncKeys) },
+                                        incoming: normalisedEvents.map(\.syncKeys),
+                                        windowStart: start)
+        let byID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
         var matched = Set<UUID>()
         var changed: [OlanaEvent] = []
-        var unmatched: [OlanaEvent] = []
-
-        // Pass 1: same event, same time.
-        for incoming in normalisedEvents {
-            if let xid = incoming.externalEventId,
-               let event = byIdAndStart[Self.syncKey(xid, incoming.start)],
-               matched.insert(event.id).inserted {
-                if event.mergeSynced(from: incoming) { changed.append(event) }
-            } else {
-                unmatched.append(incoming)
-            }
-        }
-
-        // Pass 2: same event, moved. Anything still unmatched is new.
-        for incoming in unmatched {
-            if let xid = incoming.externalEventId,
-               let candidates = byId[xid], candidates.count == 1,
-               let event = candidates.first,
-               event.start >= start,
-               matched.insert(event.id).inserted {
+        var inserted: [OlanaEvent] = []
+        for (i, incoming) in normalisedEvents.enumerated() {
+            if let id = matches[i], let event = byID[id] {
+                matched.insert(id)
                 if event.mergeSynced(from: incoming) { changed.append(event) }
             } else {
                 context.insert(incoming)
+                inserted.append(incoming)
             }
         }
 
-        // Gone from the source.
+        // Gone from the source. Keep the user's overrides for 24 h in case the
+        // event comes back under a new identifier (Exchange, some CalDAV).
         let removed = existing.filter {
             $0.start >= start && $0.start <= end && !matched.contains($0.id)
         }
-        for event in removed { context.delete(event) }
-
+        var tombstones = loadTombstones().filter { now.timeIntervalSince($0.removedAt) <= SyncMatcher.tombstoneLife }
+        for event in removed {
+            if let t = event.overrideTombstone(removedAt: now) { tombstones.append(t) }
+            context.delete(event)
+        }
+        // New events that are the same title, start, end and organizer as one
+        // that just disappeared get its overrides. Nothing merges or deletes.
+        for event in inserted {
+            if let t = SyncMatcher.carryOver(tombstones: tombstones, newEvent: event.syncKeys, now: now) {
+                event.adoptOverrides(from: t)
+                tombstones.removeAll { $0 == t }
+            }
+        }
+        saveTombstones(tombstones)
         saveAndRefresh()
+
+        // After the save, so it sees inserts and not the deleted.
+        let newlyHidden = markCrossSourceDuplicates()
+        if !newlyHidden.isEmpty { saveAndRefresh() }
 
         // Events gone from the source lose their reminders. Changed events get
         // their alarm and Live Activity rebuilt; the replan then fixes every
@@ -445,18 +446,55 @@ final class EventStore: ObservableObject {
         let changedEvents = changed
         Task {
             let engine = NotificationEngine.shared
-            for id in removedIds {
+            for id in removedIds + newlyHidden {
                 await engine.cancelNotifications(for: id)
             }
-            for event in changedEvents where !event.completed {
+            for event in changedEvents where !event.completed && event.duplicateOf == nil {
                 await engine.scheduleNotifications(for: event)
             }
             engine.requestReplan("sync")
         }
     }
 
-    private static func syncKey(_ externalId: String, _ start: Date) -> String {
-        "\(externalId)|\(Int(start.timeIntervalSince1970))"
+    /// The same Google event connected directly and through iOS Calendar: keep
+    /// the direct copy (richer data), hide the other. Recomputed every sync, so
+    /// disconnecting Google brings the iOS Calendar copy back. A user override
+    /// made on the hidden copy moves to the kept one if it has none.
+    /// Returns the ids hidden by this pass, so their alarms can be cancelled.
+    @discardableResult
+    private func markCrossSourceDuplicates() -> [UUID] {
+        let apple = allEvents.filter { $0.externalCalendarId == "apple" }
+        let google = allEvents.filter { $0.externalCalendarId == "google" }
+        let dupes = SyncMatcher.crossSourceDuplicates(apple: apple.map { ($0.id, $0.syncKeys) },
+                                                      google: google.map { ($0.id, $0.syncKeys) })
+        let googleByID = Dictionary(google.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var newlyHidden: [UUID] = []
+        for event in apple {
+            let keep = dupes[event.id]
+            if let keep, let kept = googleByID[keep], event.hasUserOverride, !kept.hasUserOverride {
+                kept.urgencyOverrideRaw = event.urgencyOverrideRaw
+                kept.urgencyOverrideFromCalendar = nil
+                kept.refreshUrgency()
+            }
+            if event.duplicateOf != keep {
+                if event.duplicateOf == nil { newlyHidden.append(event.id) }
+                event.duplicateOf = keep
+            }
+        }
+        return newlyHidden
+    }
+
+    // MARK: Tombstones
+
+    private static let tombstoneKey = "olanaOverrideTombstones_v1"
+
+    private func loadTombstones() -> [OverrideTombstone] {
+        guard let data = UserDefaults.standard.data(forKey: Self.tombstoneKey) else { return [] }
+        return (try? JSONDecoder().decode([OverrideTombstone].self, from: data)) ?? []
+    }
+
+    private func saveTombstones(_ t: [OverrideTombstone]) {
+        if let data = try? JSONEncoder().encode(t) { UserDefaults.standard.set(data, forKey: Self.tombstoneKey) }
     }
 
     // MARK: - Notification Action Observers
@@ -533,6 +571,11 @@ private extension OlanaEvent {
         calendarName     = incoming.calendarName
         calendarColorHex = incoming.calendarColorHex
         externalEventId  = incoming.externalEventId
+        iCalUID          = incoming.iCalUID
+        occurrenceStart  = incoming.occurrenceStart
+        seriesID         = incoming.seriesID
+        calendarItemID   = incoming.calendarItemID
+        organizer        = incoming.organizer
         sourceModifiedAt = incoming.sourceModifiedAt
         syncedAt         = incoming.syncedAt
 
@@ -552,3 +595,30 @@ private extension OlanaEvent {
     }
 }
 
+// MARK: - Identity
+
+extension OlanaEvent {
+    var syncKeys: SyncKeys {
+        SyncKeys(sourceID: externalEventId, title: title, start: start, end: end,
+                 iCalUID: iCalUID, occurrence: occurrenceStart, organizer: organizer)
+    }
+
+    /// An urgency the user set on this event (not the calendar's setting).
+    var hasUserOverride: Bool {
+        urgencyOverrideRaw != nil && urgencyOverrideFromCalendar != true
+    }
+
+    /// The user's overrides, if any, kept when the event disappears.
+    func overrideTombstone(removedAt: Date) -> OverrideTombstone? {
+        guard hasUserOverride else { return nil }
+        return OverrideTombstone(title: title, start: start, end: end, organizer: organizer,
+                                 removedAt: removedAt, urgencyOverrideRaw: urgencyOverrideRaw)
+    }
+
+    func adoptOverrides(from t: OverrideTombstone) {
+        guard !hasUserOverride, let raw = t.urgencyOverrideRaw else { return }
+        urgencyOverrideRaw = raw
+        urgencyOverrideFromCalendar = nil
+        refreshUrgency()
+    }
+}

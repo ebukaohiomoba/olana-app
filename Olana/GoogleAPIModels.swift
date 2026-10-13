@@ -45,6 +45,15 @@ struct GEvent: Codable {
     let recurrence: [String]?
     let updated: String?        // RFC 3339
     let htmlLink: String?
+    // Identity (PRD §3.12)
+    let iCalUID: String?
+    let recurringEventId: String?
+    let originalStartTime: GEventDateTime?
+    let organizer: GPerson?
+}
+
+struct GPerson: Codable {
+    let email: String?
 }
 
 struct GEventDateTime: Codable {

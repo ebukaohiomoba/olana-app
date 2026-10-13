@@ -94,6 +94,24 @@ public final class OlanaEvent {
     /// Always false for events imported from Google/Apple Calendar.
     public var isTask: Bool = false
 
+    // MARK: - Identity (PRD v6 §3.12)
+    // Filled on the next sync; until then the source id + start match still works.
+    /// Google `iCalUID`; EventKit `calendarItemExternalIdentifier`.
+    public var iCalUID: String? = nil
+    /// The occurrence's original start: Google `originalStartTime`, EventKit
+    /// `occurrenceDate`. A moved recurring exception keeps it.
+    public var occurrenceStart: Date? = nil
+    /// Google `recurringEventId`.
+    public var seriesID: String? = nil
+    /// EventKit `calendarItemIdentifier`.
+    public var calendarItemID: String? = nil
+    /// Organizer email, lowercased. Used only to carry overrides over when an
+    /// identifier changes.
+    public var organizer: String? = nil
+    /// Set on an iOS Calendar copy of an event that's also synced directly
+    /// from Google: the id of the copy that's kept. Hidden, not deleted.
+    public var duplicateOf: UUID? = nil
+
     // MARK: - Cached semantics (Option 5)
     // Stable properties of the event, extracted once and never recomputed. All
     // optional with defaults so lightweight SwiftData migration keeps working.

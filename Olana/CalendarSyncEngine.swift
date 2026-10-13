@@ -58,6 +58,10 @@ enum CalendarSyncEngine {
         )
         event.syncedAt         = Date()
         event.sourceModifiedAt = ekEvent.lastModifiedDate
+        event.iCalUID          = ekEvent.calendarItemExternalIdentifier
+        event.calendarItemID   = ekEvent.calendarItemIdentifier
+        event.occurrenceStart  = ekEvent.occurrenceDate
+        event.organizer        = SyncMatcher.normalizedOrganizer(ekEvent.organizer?.url.absoluteString)
         applyImportUrgency(to: event, calendarID: ekEvent.calendar.calendarIdentifier,
                            userCalendars: userCalendars)
         return event
@@ -65,23 +69,11 @@ enum CalendarSyncEngine {
 
     // MARK: - Deduplicate
 
-    /// Removes duplicate events (same title + start time).
-    /// When duplicates exist, prefers .apple source.
+    /// Collapses copies of the same event within one source (the same invite on
+    /// two calendars): only on iCalUID + start, never on title and time, which
+    /// merged two different "1:1"s at the same hour (PRD §3.12).
     static func deduplicate(_ events: [OlanaEvent]) -> [OlanaEvent] {
-        // Sort apple source first so it wins dedup
-        let sorted = events.sorted {
-            ($0.externalCalendarId == "apple" ? 0 : 1) <
-            ($1.externalCalendarId == "apple" ? 0 : 1)
-        }
-        var seen   = Set<String>()
-        var result = [OlanaEvent]()
-        for event in sorted {
-            let key = "\(event.title.lowercased())_\(Int(event.start.timeIntervalSince1970))"
-            if seen.insert(key).inserted {
-                result.append(event)
-            }
-        }
-        return result
+        SyncMatcher.dedupeWithinSource(events.map(\.syncKeys)).map { events[$0] }
     }
 
     // MARK: - Google Calendar Normalise
@@ -113,7 +105,11 @@ enum CalendarSyncEngine {
             calendarName:       calendarEntry.summary,
             calendarColorHex:   calendarEntry.backgroundColor
         )
-        event.syncedAt = Date()
+        event.syncedAt        = Date()
+        event.iCalUID         = gEvent.iCalUID
+        event.seriesID        = gEvent.recurringEventId
+        event.occurrenceStart = gEvent.originalStartTime.flatMap(parseGEventDate) ?? start
+        event.organizer       = SyncMatcher.normalizedOrganizer(gEvent.organizer?.email)
         applyImportUrgency(to: event, calendarID: calendarEntry.id, userCalendars: userCalendars)
         return event
     }
