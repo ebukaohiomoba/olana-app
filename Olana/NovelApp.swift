@@ -22,6 +22,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             NotificationEngine.shared.setupNotificationCategories()
         }
 
+        #if DEBUG
+        // M0 spikes S1 to S3 (spec v3 §2.1). Must register before launch ends.
+        BackgroundRefresh.register()
+        #endif
+
         return true
     }
 

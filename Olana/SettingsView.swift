@@ -152,6 +152,32 @@ struct SettingsView: View {
 
                         #if DEBUG
                         SettingsSection(title: "Developer") {
+                            NavigationLink {
+                                SpikesView()
+                            } label: {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "testtube.2")
+                                        .font(.title3)
+                                        .foregroundStyle(.purple)
+                                        .frame(width: 36, height: 36)
+                                        .background(Circle().fill(Color.purple.opacity(0.12)))
+
+                                    Text("M0 spikes")
+                                        .font(.body)
+                                        .foregroundStyle(theme.colors.ink)
+
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider().padding(.leading, 66)
+
                             Button {
                                 UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
                             } label: {

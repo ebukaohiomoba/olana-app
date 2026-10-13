@@ -51,6 +51,9 @@ struct HomeView: View {
                                       onDelete: { handleDeleteIntent(id: $0, isRecurring: $1) })
                 }
                 .scrollIndicators(.hidden)
+                #if DEBUG
+                .spikeCardLog(day.card)
+                #endif
             }
             .background(c.bg.ignoresSafeArea())
             .overlay(alignment: .top) { nudgeBanner }

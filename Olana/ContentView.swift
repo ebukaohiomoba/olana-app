@@ -39,6 +39,7 @@ struct ContentView: View {
                 .tag(OlanaTab.circles)
 
             SettingsView()
+                .environmentObject(store)
                 .environmentObject(calendarManager)
                 .environmentObject(calendarDataStore)
                 .modifier(CustomTabBarSpace())
