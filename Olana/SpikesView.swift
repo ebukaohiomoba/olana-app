@@ -18,6 +18,7 @@ struct SpikesView: View {
     @State private var s2Status = ""
     @State private var bgLiveActivity = BackgroundRefresh.tryLiveActivityInBackground
     @State private var confirmClear = false
+    var autorun = false
 
     var body: some View {
         List {
@@ -35,6 +36,7 @@ struct SpikesView: View {
                 row("Stopped by time guard", "\(stops("time guard"))")
                 row("Expired by the system", "\(entries.filter { $0.event == "expired" }.count)")
                 row("Pass line", "≥ 1 OK call in ≥ 50% of runs")
+                Button("Run the background steps now (not counted)") { Task { await BackgroundRefresh.runManually(); entries = SpikeLog.read() } }
             }
 
             Section {
@@ -63,7 +65,7 @@ struct SpikesView: View {
                     Task { await runS4() }
                 }
                 .disabled(s4Running)
-                let calls = entries.filter { $0.spike == "s4" }
+                let calls = entries.filter { $0.spike == "s4" && $0.event == "call" && $0.fields["source"] != "sample" }
                 let ok = calls.filter { $0.fields["outcome"] == "ok" && $0.fields["cold"] != "true" }
                     .compactMap { Double($0.fields["secs"] ?? "") }.sorted()
                 row("Calls", "\(calls.count)")
@@ -97,6 +99,7 @@ struct SpikesView: View {
         }
         .navigationTitle("M0 spikes")
         .onAppear { entries = SpikeLog.read() }
+        .task { if autorun { await runAll() } }
         .refreshable { entries = SpikeLog.read() }
         .confirmationDialog("Clear the spike log?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Clear", role: .destructive) { SpikeLog.clear(); entries = [] }
@@ -105,7 +108,9 @@ struct SpikesView: View {
 
     // MARK: Summary
 
-    private var runs: [SpikeLog.Entry] { entries.filter { $0.spike == "s1" && $0.event == "run end" } }
+    private var runs: [SpikeLog.Entry] {
+        entries.filter { $0.spike == "s1" && $0.event == "run end" && $0.fields["manual"] != "true" }
+    }
     private var runsWithOK: Int { runs.filter { (Int($0.fields["ok"] ?? "") ?? 0) > 0 }.count }
     private var meanOK: Double {
         Double(runs.compactMap { Int($0.fields["ok"] ?? "") }.reduce(0, +)) / Double(max(runs.count, 1))
@@ -135,6 +140,24 @@ struct SpikesView: View {
             s2Status = "Failed: \(error.localizedDescription)"
             SpikeLog.write("s2", "foreground scheduled request failed", ["error": "\(error)"])
         }
+        entries = SpikeLog.read()
+    }
+
+    /// `-spikes autorun`: presses every button once, for the simulator.
+    private func runAll() async {
+        SpikeLog.write("bg", "autorun start")
+        scheduleS2()
+        await BackgroundRefresh.runManually()
+        let events = store.events.filter { $0.start > Date() }
+        if events.isEmpty {
+            for (i, e) in AssistSpike.samples.enumerated() {
+                s4Progress = "sample \(i + 1)/\(AssistSpike.samples.count)"
+                _ = await AssistSpike.run(e, index: i, source: "sample")
+            }
+        } else {
+            await runS4()
+        }
+        SpikeLog.write("bg", "autorun end")
         entries = SpikeLog.read()
     }
 

@@ -76,7 +76,7 @@ enum BackgroundRefresh {
 
         let once = CompleteOnce(task)
         let work = Task { @MainActor in
-            await steps(runID: runID, started: started)
+            await steps(runID: runID, started: started, manual: false)
         }
         task.expirationHandler = {
             work.cancel()
@@ -90,11 +90,19 @@ enum BackgroundRefresh {
         }
     }
 
+    /// The same steps, started by hand from the Spikes screen. The simulator
+    /// never runs BGTasks, so this proves the code path; it's tagged manual and
+    /// left out of the S1 numbers.
     @MainActor
-    private static func steps(runID: String, started: Date) async -> Bool {
+    static func runManually() async {
+        _ = await steps(runID: "manual-" + String(UUID().uuidString.prefix(4)), started: Date(), manual: true)
+    }
+
+    @MainActor
+    private static func steps(runID: String, started: Date, manual: Bool = false) async -> Bool {
         let protected = UIApplication.shared.isProtectedDataAvailable
         SpikeLog.write("bg", "run start", [
-            "run": runID,
+            "run": runID, "manual": "\(manual)",
             "protectedData": "\(protected)",
             "lowPower": "\(ProcessInfo.processInfo.isLowPowerModeEnabled)",
             "model": "\(SystemLanguageModel.default.availability)",
@@ -114,7 +122,7 @@ enum BackgroundRefresh {
         // Step 5 (S1).
         let result = await s1Budget(runID: runID, started: started)
         SpikeLog.write("s1", "run end", [
-            "run": runID,
+            "run": runID, "manual": "\(manual)",
             "ok": "\(result.ok)", "failed": "\(result.failed)",
             "stop": result.stop,
             "elapsed": String(format: "%.1f", Date().timeIntervalSince(started)),

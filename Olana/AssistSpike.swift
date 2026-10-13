@@ -111,8 +111,24 @@ enum AssistSpike {
         let outcome: String
     }
 
+    /// For the simulator, which has no calendar: tagged "sample" in the log
+    /// and left out of the S4 numbers.
+    static let samples: [Input] = [
+        .init(title: "Client review", calendar: "Work", location: "Acme HQ, 500 Market St",
+              notes: "Walk through Q3 numbers. Bring printed agenda."),
+        .init(title: "Dentist cleaning", calendar: "Personal", location: "Bright Dental, 22 Oak Ave", notes: nil),
+        .init(title: "Team standup", calendar: "Work", location: "Conf Rm B", notes: nil),
+        .init(title: "Design sync", calendar: "Work", location: "https://zoom.us/j/123456",
+              notes: "<p>Join Zoom Meeting https://zoom.us/j/123456</p>"),
+        .init(title: "Flight to Chicago", calendar: "Personal", location: "SFO", notes: "UA 512, seat 14C"),
+        .init(title: "Coffee with Sam", calendar: "Personal", location: "Starbucks Flatiron", notes: nil),
+        .init(title: "Rent due", calendar: "Personal", location: nil, notes: nil),
+        .init(title: "Quarterly planning", calendar: "Work", location: "NYC-12-Huddle; https://teams.microsoft.com/l/meetup-join/abc",
+              notes: "Microsoft Teams meeting. Join on your computer."),
+    ]
+
     /// One timed call. No retry: S4 measures the first attempt.
-    static func run(_ e: Input, index: Int) async -> Result {
+    static func run(_ e: Input, index: Int, source: String = "real") async -> Result {
         let input = prompt(e)
         let est = (instructions.count + input.count) / 4
         let session = LanguageModelSession(instructions: instructions)
@@ -142,7 +158,7 @@ enum AssistSpike {
         }
         let secs = Date().timeIntervalSince(t0)
         fields.merge([
-            "i": "\(index)", "cold": "\(index == 0)",
+            "i": "\(index)", "cold": "\(index == 0)", "source": source,
             "secs": String(format: "%.2f", secs),
             "estTokens": "\(est)", "inputChars": "\(input.count)",
             "outcome": outcome, "title": e.title,

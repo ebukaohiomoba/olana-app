@@ -16,6 +16,7 @@ enum HomeFixtures {
 
     static var requested: String? {
         UserDefaults.standard.string(forKey: "homeFixture")
+            ?? UserDefaults.standard.string(forKey: "spikes").map { "spikes-" + $0 }
     }
 
     static func at(_ h: Int, _ m: Int, dayOffset: Int = 0) -> Date {
@@ -58,8 +59,20 @@ enum HomeFixtures {
 struct HomeFixtureScreen: View {
     let which: String
     @State private var tab: OlanaTab = .home
+    @StateObject private var store = EventStore()
 
     var body: some View {
+        if which.hasPrefix("spikes-") {
+            // `-spikes open` or `-spikes autorun`: the Spikes screen, no login.
+            NavigationStack { SpikesView(autorun: which == "spikes-autorun") }
+                .environmentObject(store)
+        } else {
+            home
+        }
+    }
+
+    @ViewBuilder
+    private var home: some View {
         let day = which == "empty" ? HomeFixtures.emptyDay() : HomeFixtures.fullDay()
         ScreenBody(day: day, tab: $tab)
             .homePalette()

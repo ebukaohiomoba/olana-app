@@ -447,8 +447,6 @@ class NotificationEngine: ObservableObject {
     @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
     private var scheduledRecords: [UUID: ScheduledNotificationRecord] = [:]
-    private var dailyNotificationCount = 0
-    private var lastCountResetDate: Date?
     /// Maps event UUID → Live Activity ID so we can update/end it later.
     private var liveActivityIds: [UUID: String] = [:]
 
@@ -497,250 +495,360 @@ class NotificationEngine: ObservableObject {
 
     // MARK: - Schedule Notifications
 
+    /// An event was added, edited, re-judged or escalated. Refreshes its alarm,
+    /// Live Activity and calendar backup as before, then asks the planner to
+    /// bring every event's reminders up to date (PRD v6 §3.9).
     func scheduleNotifications(for event: OlanaEvent, confidence: Double = 1.0) async {
         // Re-register categories so snooze button labels always reflect current settings.
         setupNotificationCategories()
         guard isAuthorized, settings.allNotificationsEnabled else { return }
 
-        await cancelNotifications(for: event.id)
+        // The alarm and Live Activity were built for the event's old time or
+        // urgency. Rebuild them.
+        await endLiveActivity(for: event.id)
+        await AlarmKitManager.shared.cancelAlarm(for: event.id)
 
         // Later events with "silent until escalated" get no notifications yet.
         // The alarm is decided separately: a severe event far enough out to be
-        // Later today still needs its alarm, and returning before the gate meant
-        // it never got one. Re-scoring on foreground reschedules notifications
-        // once it escalates.
-        if event.urgency == .low && settings.silentUntilEscalated {
-            await scheduleAlarmIfEarned(for: event)
-            return
-        }
-
-        let profile = NotificationProfile.profile(for: event.urgency)
-
-        // Use cadence/nudge settings to build timings instead of static profile arrays.
-        let timingsToUse = timingsForEvent(event, profile: profile)
-        var candidatePairs: [(date: Date, timing: NotificationProfile.NotificationTiming)] = []
-
-        for timing in timingsToUse {
-            var candidateDate: Date?
-
-            if timing.daysBefore > 0, let specificTime = timing.specificTime {
-                // ── Evening-before (or N-days-before) at a fixed clock time ──────
-                let targetDay = calendar.date(byAdding: .day, value: -timing.daysBefore, to: event.start) ?? event.start
-                candidateDate = calendar.date(
-                    bySettingHour: specificTime.hour, minute: specificTime.minute, second: 0, of: targetDay
-                )
-
-            } else if let specificTime = timing.specificTime, timing.minutesBefore == 0 {
-                // ── Same-day at a fixed clock time (e.g. 8 am) ──────────────────
-                let startOfDay = calendar.startOfDay(for: event.start)
-                let proposedDate = calendar.date(
-                    bySettingHour: specificTime.hour, minute: specificTime.minute, second: 0, of: startOfDay
-                )
-                let eventHour = calendar.component(.hour, from: event.start)
-
-                if eventHour < 10 {
-                    // FIX: event starts before 10 am — fall back to 30 min before
-                    candidateDate = calendar.date(byAdding: .minute, value: -30, to: event.start)
-                } else {
-                    candidateDate = proposedDate
-                }
-
-            } else {
-                // ── Relative: N minutes before the event ────────────────────────
-                candidateDate = calendar.date(byAdding: .minute, value: -timing.minutesBefore, to: event.start)
+        // Later today still needs its alarm.
+        if !(event.urgency == .low && settings.silentUntilEscalated) {
+            let profile = NotificationProfile.profile(for: event.urgency)
+            if profile.enableLiveActivity {
+                await scheduleLiveActivity(for: event)
             }
-
-            if let date = candidateDate {
-                candidatePairs.append((date: date, timing: timing))
+            // Synced events already live in a calendar with its own alerts. Copying
+            // one into the default calendar would sync back in as a new event, get
+            // scheduled, and be copied again.
+            if settings.enableCalendarRedundancy && !event.isFromExternalCalendar {
+                await addCalendarAlarm(for: event)
             }
-        }
-
-        // Filter past, respect quiet hours, deduplicate, cap
-        let now = Date()
-        candidatePairs = candidatePairs.filter { $0.date > now }
-
-        // Last-resort fallback: if every pre-event window has already passed
-        // (e.g. event created seconds before it starts), fire one immediate
-        // notification so the user is never left in silence.
-        // Use a 30-second grace window so events set to "now" also match.
-        if candidatePairs.isEmpty && event.start >= now.addingTimeInterval(-30) {
-            let immediateDate = now.addingTimeInterval(5)
-            candidatePairs = [(date: immediateDate,
-                               timing: NotificationProfile.NotificationTiming(minutesBefore: 0))]
-        }
-
-        // Respect quiet hours unless the urgency tier is configured to be exempt.
-        let exemptFromQuiet: Bool
-        switch profile.urgency {
-        case .high:        exemptFromQuiet = settings.criticalExemptFromQuietHours
-        case .medium, .low: exemptFromQuiet = false
-        }
-        if !exemptFromQuiet {
-            candidatePairs = candidatePairs.map { (normalizeForQuietHours($0.date), $0.timing) }
-        }
-        candidatePairs = deduplicatePairs(candidatePairs, tolerance: 60)
-
-        if candidatePairs.count > profile.maxNotificationsPerEvent {
-            candidatePairs = Array(candidatePairs.prefix(profile.maxNotificationsPerEvent))
-        }
-
-        resetDailyCountIfNeeded()
-        let remaining = settings.dailyNotificationCap - dailyNotificationCount
-        if candidatePairs.count > remaining {
-            candidatePairs = Array(candidatePairs.prefix(remaining))
-        }
-
-        // Schedule each notification
-        var notificationIds: [String] = []
-        for (index, pair) in candidatePairs.enumerated() {
-            let notificationId = "olana:\(event.id.uuidString):\(index)"
-
-            let content = UNMutableNotificationContent()
-            content.title               = event.title
-            content.subtitle            = subtitleForTiming(pair.timing)
-            content.body                = bodyForUrgency(event.urgency, eventStart: event.start, timing: pair.timing)
-            content.sound               = resolvedSound(for: profile)
-            content.threadIdentifier    = event.id.uuidString
-            content.categoryIdentifier  = "EVENT_\(urgencyString(event.urgency).uppercased())"
-            content.interruptionLevel   = resolvedInterruptionLevel(for: profile)
-            content.userInfo            = [
-                "eventId":           event.id.uuidString,
-                "urgency":           event.urgency.rawValue,
-                "notificationIndex": index
-            ]
-
-            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: pair.date)
-            let trigger    = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            let request    = UNNotificationRequest(identifier: notificationId, content: content, trigger: trigger)
-
-            do {
-                try await center.add(request)
-                notificationIds.append(notificationId)
-                dailyNotificationCount += 1
-                print("✅ NotificationEngine: Scheduled '\(event.title)' at \(pair.date)")
-            } catch {
-                print("❌ NotificationEngine: Failed to schedule: \(error)")
-            }
-        }
-
-        let record = ScheduledNotificationRecord(
-            eventId:         event.id,
-            urgency:         event.urgency,
-            notificationIds: notificationIds,
-            scheduledAt:     Date(),
-            eventStartTime:  event.start
-        )
-        scheduledRecords[event.id] = record
-        saveRecords()
-
-        if profile.enableLiveActivity {
-            await scheduleLiveActivity(for: event)
-        }
-
-        // Synced events already live in a calendar with its own alerts. Copying
-        // one into the default calendar would sync back in as a new event, get
-        // scheduled, and be copied again.
-        if settings.enableCalendarRedundancy && !event.isFromExternalCalendar {
-            await addCalendarAlarm(for: event)
         }
 
         // AlarmKit: a full-screen alarm cuts through Silent and Focus, and one
         // wrong one gets the permission revoked in a single tap. So the gate is
         // deliberately narrow and everything about it fails closed.
         await scheduleAlarmIfEarned(for: event)
+
+        // An event the store doesn't hold yet (or a debug mock) still gets its
+        // one-shot "starting now" reminder.
+        if floorPlan(for: event, now: Date()).immediate {
+            await postImmediate(for: event)
+        }
+        requestReplan("event changed")
     }
 
-    // MARK: - Synced event reminders
+    // MARK: - The floor, per event
 
-    /// How far ahead synced events are kept scheduled. Short on purpose: iOS
-    /// keeps only the 64 soonest pending notifications per app, and a work
-    /// calendar can hold hundreds of events. Every sync tops the window up.
+    /// How far ahead synced events still showing the placeholder get their
+    /// basic reminder. Unchanged: a work calendar can hold hundreds of events.
     static let syncedReminderHorizon: TimeInterval = 48 * 3600
 
     /// Minutes before a synced event that its basic reminder fires.
     static let basicReminderLeadMinutes = 15
 
-    /// Makes sure every upcoming synced event in the horizon has reminders.
+    /// The floor for one event: exactly the reminders this engine has always
+    /// planned for it, with execution features off (PRD §1.4 principle 7).
+    /// Changes from before, both from the PRD: the daily cap no longer applies
+    /// (the floor is "not counted", v3 §3.9), and indices follow the timing's
+    /// place in the profile so a reminder keeps its id as earlier ones fire.
     ///
-    /// Events whose urgency is a real answer (judged by the model, or set by
-    /// the user or their calendar setting) get their full reminders. Events
-    /// still showing the sync placeholder get one basic reminder, so nothing
-    /// is silent while it waits to be judged, or forever on a phone without
-    /// Apple Intelligence. Backfill replaces the basic one once it judges.
-    ///
-    /// Skips anything already scheduled, so calling it on every sync is cheap.
-    func topUpSyncedReminders(for events: [OlanaEvent]) async {
-        guard isAuthorized, settings.allNotificationsEnabled else { return }
-        let now = Date()
-        let horizon = now.addingTimeInterval(Self.syncedReminderHorizon)
+    /// `immediate`: every reminder time has passed but the event hasn't
+    /// started. Posted once, outside the plan, so a replan can't repeat it.
+    func floorPlan(for event: OlanaEvent, now: Date) -> (slots: [AlertSlot], immediate: Bool) {
+        guard isAuthorized, settings.allNotificationsEnabled, !event.completed else { return ([], false) }
+        if event.isFromExternalCalendar && event.isAllDay { return ([], false) }
 
-        for event in events where event.isFromExternalCalendar
-            && !event.completed && !event.isAllDay
-            && event.start > now && event.start < horizon
-            && scheduledRecords[event.id] == nil {
-            if event.hasPlaceholderUrgency {
-                await scheduleBasicReminder(for: event, now: now)
-            } else {
-                await scheduleNotifications(for: event)
+        // Later events with "silent until escalated" have no floor (A10).
+        if event.urgency == .low && settings.silentUntilEscalated { return ([], false) }
+
+        if event.hasPlaceholderUrgency {
+            return basicSlot(for: event, now: now)
+        }
+
+        let profile = NotificationProfile.profile(for: event.urgency)
+        var candidates: [(index: Int, date: Date, timing: NotificationProfile.NotificationTiming)] = []
+        for (index, timing) in timingsForEvent(event, profile: profile).enumerated() {
+            if let date = fireDate(for: timing, event: event) {
+                candidates.append((index, date, timing))
             }
         }
+
+        candidates = candidates.filter { $0.date > now }
+        if candidates.isEmpty {
+            // Every pre-event window has passed (e.g. created seconds before it
+            // starts): one immediate reminder so the user is never left in silence.
+            return ([], event.start >= now.addingTimeInterval(-30))
+        }
+
+        // Respect quiet hours unless the urgency tier is configured to be exempt.
+        let exemptFromQuiet = profile.urgency == .high && settings.criticalExemptFromQuietHours
+        if !exemptFromQuiet {
+            candidates = candidates.map { ($0.index, normalizeForQuietHours($0.date), $0.timing) }
+        }
+        // Drop reminders within a minute of an earlier-listed one.
+        var deduped: [(index: Int, date: Date, timing: NotificationProfile.NotificationTiming)] = []
+        for c in candidates where !deduped.contains(where: { abs($0.date.timeIntervalSince(c.date)) < 60 }) {
+            deduped.append(c)
+        }
+        let kept = deduped.prefix(profile.maxNotificationsPerEvent)
+
+        let slots = kept.map { c in
+            AlertSlot(
+                id: AlertID.floor(event.id, c.index), kind: .floor,
+                eventID: event.id, eventStart: event.start, fireDate: c.date,
+                priority: false,
+                title: event.title,
+                subtitle: subtitleForTiming(c.timing),
+                body: bodyForUrgency(event.urgency, eventStart: event.start, timing: c.timing),
+                category: "EVENT_\(urgencyString(event.urgency).uppercased())",
+                urgencyRaw: event.urgency.rawValue, index: c.index
+            )
+        }
+        return (slots, false)
     }
 
-    /// One plain reminder shortly before the event, the way a calendar app
-    /// would. Deliberately outside the daily cap: the cap is counted when
-    /// reminders are scheduled, so a busy synced calendar would otherwise use
-    /// it up and starve the events that actually matter.
-    private func scheduleBasicReminder(for event: OlanaEvent, now: Date) async {
+    private func fireDate(for timing: NotificationProfile.NotificationTiming, event: OlanaEvent) -> Date? {
+        if timing.daysBefore > 0, let specificTime = timing.specificTime {
+            // Evening-before (or N-days-before) at a fixed clock time
+            let targetDay = calendar.date(byAdding: .day, value: -timing.daysBefore, to: event.start) ?? event.start
+            return calendar.date(bySettingHour: specificTime.hour, minute: specificTime.minute, second: 0, of: targetDay)
+        }
+        if let specificTime = timing.specificTime, timing.minutesBefore == 0 {
+            // Same-day at a fixed clock time (e.g. 8 am); events before 10 am
+            // fall back to 30 min before.
+            if calendar.component(.hour, from: event.start) < 10 {
+                return calendar.date(byAdding: .minute, value: -30, to: event.start)
+            }
+            return calendar.date(bySettingHour: specificTime.hour, minute: specificTime.minute, second: 0,
+                                 of: calendar.startOfDay(for: event.start))
+        }
+        // Relative: N minutes before the event
+        return calendar.date(byAdding: .minute, value: -timing.minutesBefore, to: event.start)
+    }
+
+    /// Synced events still showing the placeholder: one plain reminder shortly
+    /// before, the way a calendar app would, within the 48 h horizon.
+    private func basicSlot(for event: OlanaEvent, now: Date) -> (slots: [AlertSlot], immediate: Bool) {
+        guard !event.isAllDay, event.start > now,
+              event.start.timeIntervalSince(now) < Self.syncedReminderHorizon else { return ([], false) }
         let lead = Self.basicReminderLeadMinutes
-        var fireDate = event.start.addingTimeInterval(-Double(lead) * 60)
-        if fireDate <= now {
-            // Already inside the lead window: tell them now, unless it is
-            // about to start anyway.
-            guard event.start.timeIntervalSince(now) > 60 else { return }
-            fireDate = now.addingTimeInterval(5)
+        let fire = event.start.addingTimeInterval(-Double(lead) * 60)
+        if fire <= now {
+            // Already inside the lead window: tell them now, unless it's about to start anyway.
+            return ([], event.start.timeIntervalSince(now) > 60)
         }
         // Moving a 15-minute reminder to the end of quiet hours would land it
         // after the event. Skip it instead.
-        if settings.quietHoursEnabled && isInQuietHours(fireDate) { return }
+        if settings.quietHoursEnabled && isInQuietHours(fire) { return ([], false) }
 
         let fmt = DateFormatter()
         fmt.timeStyle = .short
         fmt.dateStyle = .none
-
-        let id = "olana:\(event.id.uuidString):0"
-        let content = UNMutableNotificationContent()
-        content.title              = event.title
-        content.subtitle           = fireDate > now.addingTimeInterval(60) ? "in \(lead) minutes" : "starting soon"
-        content.body               = "Starts at \(fmt.string(from: event.start))."
-        content.sound              = .default
-        content.threadIdentifier   = event.id.uuidString
-        content.categoryIdentifier = "EVENT_\(urgencyString(event.urgency).uppercased())"
-        content.userInfo           = [
-            "eventId":           event.id.uuidString,
-            "urgency":           event.urgency.rawValue,
-            "notificationIndex": 0
-        ]
-
-        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: fireDate)
-        let request = UNNotificationRequest(
-            identifier: id, content: content,
-            trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        let slot = AlertSlot(
+            id: AlertID.floor(event.id, 0), kind: .floor,
+            eventID: event.id, eventStart: event.start, fireDate: fire, priority: false,
+            title: event.title, subtitle: "in \(lead) minutes",
+            body: "Starts at \(fmt.string(from: event.start)).",
+            category: "EVENT_\(urgencyString(event.urgency).uppercased())",
+            urgencyRaw: event.urgency.rawValue, index: 0
         )
-        do {
-            try await center.add(request)
-        } catch {
-            print("❌ NotificationEngine: Failed to schedule basic reminder: \(error)")
-            return
+        return ([slot], false)
+    }
+
+    // MARK: - Replan (PRD §3.9) and integrity check (PRD §1.9, v3 §3.10)
+
+    /// Set by EventStore so the planner can see every event at once. nil (no
+    /// store yet, or it's gone) means "unknown", never "no events": planning
+    /// from an empty list would remove every reminder.
+    var eventsProvider: (() -> [OlanaEvent]?)?
+
+    private var replanTask: Task<Void, Never>?
+    private var replanDirty = false
+
+    /// Coalesces bursts (a sync touching 40 events asks once, not 40 times).
+    func requestReplan(_ reason: String) {
+        replanDirty = true
+        guard replanTask == nil else { return }
+        replanTask = Task { @MainActor in
+            while replanDirty {
+                replanDirty = false
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                await replan(reason)
+            }
+            replanTask = nil
+        }
+    }
+
+    struct IntegrityResult: Codable {
+        let at: Date
+        let reason: String
+        let planned: Int
+        let added: Int
+        let removed: Int
+        let overflow: Int
+        /// Planned floor reminders still not pending after the replan. The gate is zero.
+        let missing: Int
+        let missingReason: String?
+    }
+
+    /// Bring pending reminders in line with the plan, then check nothing
+    /// planned is missing. Idempotent: running it twice changes nothing.
+    @discardableResult
+    func replan(_ reason: String) async -> IntegrityResult? {
+        await checkAuthorizationStatus()
+        guard isAuthorized else {
+            return record(IntegrityResult(at: Date(), reason: reason, planned: 0, added: 0, removed: 0,
+                                          overflow: 0, missing: 0, missingReason: "notAuthorized"))
+        }
+        guard let events = eventsProvider?() ?? nil else {
+            print("⏭️ AlertPlanner: no event store yet; replan skipped (\(reason))")
+            return nil
+        }
+        let now = Date()
+
+        var slots: [AlertSlot] = []
+        var immediates: [OlanaEvent] = []
+        for event in events {
+            let p = floorPlan(for: event, now: now)
+            slots += p.slots
+            if p.immediate { immediates.append(event) }
         }
 
-        scheduledRecords[event.id] = ScheduledNotificationRecord(
-            eventId:         event.id,
-            urgency:         event.urgency,
-            notificationIds: [id],
-            scheduledAt:     Date(),
-            eventStartTime:  event.start
-        )
+        let pending = await center.pendingNotificationRequests()
+        // Snoozes, immediates and debug tests count against iOS's limit too.
+        let others = pending.filter { !AlertID.isPlannedFloor($0.identifier) && !AlertID.isExec($0.identifier) }.count
+        let plan = AlertPlanner.plan(slots, now: now, limit: max(0, AlertPlanner.pendingLimit - others))
+        let diff = AlertPlanner.diff(desired: plan.keep, pending: pending.map(Self.pendingKey),
+                                     in: AlertID.isPlannedFloor)
+
+        if !diff.remove.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: diff.remove)
+        }
+        var addFailure: String?
+        for slot in diff.add {
+            do { try await center.add(request(for: slot)) }
+            catch { addFailure = "\(error)" }
+        }
+        for event in immediates { await postImmediate(for: event) }
+
+        // Records follow the plan, keeping any snoozes the user asked for.
+        var records: [UUID: ScheduledNotificationRecord] = [:]
+        for (eventID, group) in Dictionary(grouping: plan.keep, by: \.eventID) {
+            let snoozes = scheduledRecords[eventID]?.notificationIds.filter { !AlertID.isPlannedFloor($0) } ?? []
+            records[eventID] = ScheduledNotificationRecord(
+                eventId: eventID, urgency: EventUrgency(rawValue: group[0].urgencyRaw) ?? .low,
+                notificationIds: group.map(\.id) + snoozes, scheduledAt: now, eventStartTime: group[0].eventStart)
+        }
+        for (eventID, rec) in scheduledRecords where records[eventID] == nil {
+            let snoozes = rec.notificationIds.filter { !AlertID.isPlannedFloor($0) }
+            if !snoozes.isEmpty, rec.eventStartTime > now.addingTimeInterval(-3600) {
+                records[eventID] = ScheduledNotificationRecord(eventId: eventID, urgency: rec.urgency,
+                    notificationIds: snoozes, scheduledAt: rec.scheduledAt, eventStartTime: rec.eventStartTime)
+            }
+        }
+        scheduledRecords = records
         saveRecords()
+
+        // Integrity: everything planned should now be pending.
+        let after = Set(await center.pendingNotificationRequests().map(\.identifier))
+        let missing = AlertPlanner.missingFloor(planned: plan.keep, pendingIDs: after, now: Date())
+        if !plan.overflow.isEmpty {
+            print("⚠️ AlertPlanner: \(plan.overflow.count) reminders over capacity (\(plan.overflow.filter { $0.kind == .floor }.count) floor)")
+        }
+        return record(IntegrityResult(
+            at: now, reason: reason, planned: plan.keep.count,
+            added: diff.add.count, removed: diff.remove.count, overflow: plan.overflow.count,
+            missing: missing.count,
+            missingReason: missing.isEmpty ? nil : (addFailure ?? "unknown")))
+    }
+
+    private static func pendingKey(_ r: UNNotificationRequest) -> AlertPlanner.Pending {
+        let fire = (r.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate()
+            ?? (r.trigger as? UNTimeIntervalNotificationTrigger)?.nextTriggerDate()
+        let c = r.content
+        let key = "\(Int(fire?.timeIntervalSince1970 ?? 0))|\(c.title)|\(c.subtitle)|\(c.body)|\(c.categoryIdentifier)"
+        return .init(id: r.identifier, contentKey: key)
+    }
+
+    private func request(for slot: AlertSlot) -> UNNotificationRequest {
+        let urgency = EventUrgency(rawValue: slot.urgencyRaw) ?? .low
+        let profile = NotificationProfile.profile(for: urgency)
+        let content = UNMutableNotificationContent()
+        content.title              = slot.title
+        content.subtitle           = slot.subtitle
+        content.body               = slot.body
+        content.sound              = resolvedSound(for: profile)
+        content.threadIdentifier   = slot.eventID.uuidString
+        content.categoryIdentifier = slot.category
+        content.interruptionLevel  = resolvedInterruptionLevel(for: profile)
+        content.userInfo           = [
+            "eventId":           slot.eventID.uuidString,
+            "urgency":           slot.urgencyRaw,
+            "notificationIndex": slot.index
+        ]
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: slot.fireDate)
+        return UNNotificationRequest(identifier: slot.id, content: content,
+                                     trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
+    }
+
+    /// "Starting now", at most once per event and start time.
+    private func postImmediate(for event: OlanaEvent) async {
+        let key = "\(event.id.uuidString)|\(Int(event.start.timeIntervalSince1970))"
+        var sent = Set(UserDefaults.standard.stringArray(forKey: immediateKey) ?? [])
+        guard !sent.contains(key) else { return }
+
+        let fmt = DateFormatter()
+        fmt.timeStyle = .short
+        fmt.dateStyle = .none
+        let profile = NotificationProfile.profile(for: event.urgency)
+        let content = UNMutableNotificationContent()
+        content.title              = event.title
+        content.subtitle           = "starting soon"
+        content.body               = "Starts at \(fmt.string(from: event.start))."
+        content.sound              = event.hasPlaceholderUrgency ? .default : resolvedSound(for: profile)
+        content.threadIdentifier   = event.id.uuidString
+        content.categoryIdentifier = "EVENT_\(urgencyString(event.urgency).uppercased())"
+        content.interruptionLevel  = event.hasPlaceholderUrgency ? .active : resolvedInterruptionLevel(for: profile)
+        content.userInfo           = ["eventId": event.id.uuidString, "urgency": event.urgency.rawValue, "notificationIndex": 0]
+        let request = UNNotificationRequest(
+            identifier: "\(AlertID.floorPrefix)\(event.id.uuidString):immediate",
+            content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false))
+        do {
+            try await center.add(request)
+            sent.insert(key)
+            // Keep the set small: drop keys for events that started over a day ago.
+            let cutoff = Date().addingTimeInterval(-86400).timeIntervalSince1970
+            sent = sent.filter { k in (Double(k.split(separator: "|").last ?? "") ?? 0) > cutoff }
+            UserDefaults.standard.set(Array(sent), forKey: immediateKey)
+        } catch {
+            print("❌ NotificationEngine: Failed to post immediate reminder: \(error)")
+        }
+    }
+
+    private let immediateKey = "olanaImmediateSent_v1"
+    private let integrityKey = "olanaFloorIntegrity_v1"
+
+    /// The last 200 integrity results, for the M1-A gate (one week, zero missing).
+    var integrityHistory: [IntegrityResult] {
+        guard let data = UserDefaults.standard.data(forKey: integrityKey) else { return [] }
+        return (try? JSONDecoder().decode([IntegrityResult].self, from: data)) ?? []
+    }
+
+    @discardableResult
+    private func record(_ r: IntegrityResult) -> IntegrityResult {
+        var all = integrityHistory
+        all.append(r)
+        if all.count > 200 { all.removeFirst(all.count - 200) }
+        if let data = try? JSONEncoder().encode(all) { UserDefaults.standard.set(data, forKey: integrityKey) }
+        if r.missing > 0 {
+            print("❌ Floor integrity: \(r.missing) missing (\(r.missingReason ?? "unknown")) after \(r.reason)")
+        }
+        return r
+    }
+
+    /// Kept for callers from before the planner: one replan covers every event.
+    func topUpSyncedReminders(for events: [OlanaEvent]) async {
+        requestReplan("sync")
     }
 
     // MARK: - AlarmKit gate
@@ -786,12 +894,16 @@ class NotificationEngine: ObservableObject {
 
     // MARK: - Cancel Notifications
 
+    /// Everything for one event. Only for user actions (Mark done) and events
+    /// that are gone (deleted, or removed from the source calendar): PRD §3.9
+    /// lets nothing else remove a floor reminder.
     func cancelNotifications(for eventId: UUID) async {
-        if let record = scheduledRecords[eventId] {
-            center.removePendingNotificationRequests(withIdentifiers: record.notificationIds)
-            scheduledRecords.removeValue(forKey: eventId)
-            saveRecords()
-        }
+        let prefix = "\(AlertID.floorPrefix)\(eventId.uuidString):"
+        let pending = await center.pendingNotificationRequests().map(\.identifier)
+        let ids = Set(pending.filter { $0.hasPrefix(prefix) } + (scheduledRecords[eventId]?.notificationIds ?? []))
+        center.removePendingNotificationRequests(withIdentifiers: Array(ids))
+        scheduledRecords.removeValue(forKey: eventId)
+        saveRecords()
         // Not gated on a notification record: an alarm or Live Activity can
         // exist without one, and must not outlive its event.
         await endLiveActivity(for: eventId)
@@ -886,8 +998,9 @@ class NotificationEngine: ObservableObject {
         NotificationCenter.default.post(name: .eventMarkedDone, object: nil, userInfo: ["eventId": eventId])
     }
 
+    /// Snooze adds a reminder. It doesn't remove the event's other reminders:
+    /// PRD §3.9 lists the user actions that do, and snooze isn't one of them.
     private func handleSnooze(eventId: UUID, urgency: EventUrgency) async {
-        await cancelNotifications(for: eventId)
         NotificationCenter.default.post(
             name: .eventSnoozed, object: nil,
             userInfo: ["eventId": eventId, "snoozeMinutes": settings.snoozeMinutes(for: urgency)]
@@ -1086,28 +1199,6 @@ class NotificationEngine: ObservableObject {
             : (hour >= quietStartHour && hour < quietEndHour)
         guard inQuiet else { return date }
         return calendar.date(bySettingHour: quietEndHour, minute: 0, second: 0, of: date) ?? date
-    }
-
-    private func deduplicatePairs(
-        _ pairs: [(date: Date, timing: NotificationProfile.NotificationTiming)],
-        tolerance: TimeInterval
-    ) -> [(date: Date, timing: NotificationProfile.NotificationTiming)] {
-        var result: [(date: Date, timing: NotificationProfile.NotificationTiming)] = []
-        for pair in pairs {
-            let isDuplicate = result.contains { abs($0.date.timeIntervalSince(pair.date)) < tolerance }
-            if !isDuplicate { result.append(pair) }
-        }
-        return result
-    }
-
-    private func resetDailyCountIfNeeded() {
-        let today = calendar.startOfDay(for: Date())
-        if let last = lastCountResetDate, !calendar.isDate(last, inSameDayAs: today) {
-            dailyNotificationCount = 0
-            lastCountResetDate     = today
-        } else if lastCountResetDate == nil {
-            lastCountResetDate = today
-        }
     }
 
     /// Subtitle line — shows timing relative to the event.

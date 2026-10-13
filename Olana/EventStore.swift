@@ -20,6 +20,8 @@ final class EventStore: ObservableObject {
         self.context = ModelContext(container)
         load()
         setupNotificationActionObservers()
+        // The alert planner sees every event at once (PRD §3.9).
+        NotificationEngine.shared.eventsProvider = { [weak self] in self?.events }
     }
 
     deinit {
@@ -293,6 +295,8 @@ final class EventStore: ObservableObject {
             event.completed = false
             event.completedAt = nil
             saveAndRefresh()
+            // Undoing Mark done brings its reminders back.
+            Task { await NotificationEngine.shared.scheduleNotifications(for: event) }
             OlanaAnalytics.eventUncompleted(urgency: urgency)
             return nil
         } else {
@@ -434,11 +438,9 @@ final class EventStore: ObservableObject {
 
         saveAndRefresh()
 
-        // Reminders for a removed or changed event were scheduled against its old
-        // time, title or urgency. Cancel them. The top-up then reschedules
-        // whatever in the next 48 hours is left without reminders, new events
-        // included. Changed events further out that already have a real
-        // urgency are rescheduled directly, since the top-up will not reach them.
+        // Events gone from the source lose their reminders. Changed events get
+        // their alarm and Live Activity rebuilt; the replan then fixes every
+        // event's reminders, new ones included (PRD §3.9).
         let removedIds = removed.map(\.id)
         let changedEvents = changed
         Task {
@@ -446,14 +448,10 @@ final class EventStore: ObservableObject {
             for id in removedIds {
                 await engine.cancelNotifications(for: id)
             }
-            for event in changedEvents {
-                await engine.cancelNotifications(for: event.id)
-                if !event.completed, !event.hasPlaceholderUrgency,
-                   event.start.timeIntervalSinceNow >= NotificationEngine.syncedReminderHorizon {
-                    await engine.scheduleNotifications(for: event)
-                }
+            for event in changedEvents where !event.completed {
+                await engine.scheduleNotifications(for: event)
             }
-            await engine.topUpSyncedReminders(for: self.events)
+            engine.requestReplan("sync")
         }
     }
 

@@ -56,6 +56,11 @@ let package = Package(
             ]
         ),
         .executableTarget(
+            name: "PlannerChecks",
+            path: "Sources/PlannerChecks",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
             name: "ExportCalendar",
             path: "Sources/ExportCalendar"
         )

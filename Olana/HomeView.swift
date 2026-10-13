@@ -66,6 +66,8 @@ struct HomeView: View {
                 Task {
                     await calendarManager.performQuickSync()
                     await store.backfillSemantics()
+                    // Integrity check on every foreground (PRD v3 §3.10).
+                    NotificationEngine.shared.requestReplan("foreground")
                 }
                 let events = store.events
                 Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
@@ -82,6 +84,7 @@ struct HomeView: View {
                     Task {
                         await calendarManager.performQuickSync()
                         await store.backfillSemantics()
+                        NotificationEngine.shared.requestReplan("foreground")
                     }
                     let events = store.events
                     Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
