@@ -45,7 +45,11 @@ public final class UrgencyManager: ObservableObject {
     /// Bump when EventSemanticsPrompt.instructions changes, to invalidate caches.
     /// 2: keyword fallback removed, so any semantics it produced are discarded.
     /// 3: "legal trouble" reworded; it tripped the safety filter (see EventSemanticsPrompt).
-    public static let promptVersion = 3
+    /// 4: severe now covers test results and condition follow-ups (under-ranked in
+    ///    M0 spike S5). Wording screened against the safety filter: a first draft about
+    ///    death, delays and official bodies blocked 69% of titles, and a sentence about
+    ///    memorial services made "Tax filing" and "Colonoscopy" fail in Calibrate.
+    public static let promptVersion = 4
 
     /// Failed extractions of the same title before it is left unranked for good.
     static let maxFailures = 3

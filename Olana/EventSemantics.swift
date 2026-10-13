@@ -120,6 +120,7 @@ public enum EventSemanticsPrompt {
                on a house, On-call shift, Custody handoff, Bar exam.
                ANY job interview, screening call, phone screen or recruiter conversation is
                severe. A missed interview cannot be recovered.
+               Getting test results back, or a follow-up visit for an ongoing condition, is severe.
       moderate real inconvenience, someone else is let down, a fee, rescheduling hassle.
                Examples: Dentist checkup, Team meeting, Performance review, Dinner
                reservation, Physical therapy, DMV, Contractor visit, A friend's wedding.
@@ -221,6 +222,35 @@ public enum EventSemanticsPrompt {
         var p = "Event title: \(stripDatePhrases(title))"
         if let name = sanitizedCalendarName(calendarName) { p += "\nCalendar: \(name)" }
         return p
+    }
+
+    /// The calendar label to retry with after the safety filter blocks a title,
+    /// or nil when there is nothing different to say and a retry would only
+    /// reproduce the block (measured: blocks are deterministic per prompt).
+    ///
+    /// Calendars named after an email address get no label in the first prompt
+    /// (see `sanitizedCalendarName`), and some titles are blocked without one but
+    /// pass with one: "Bankruptcy hearing", "Debt collector call". The address
+    /// itself still says whose calendar it is, so derive the label from that fact
+    /// rather than inventing one.
+    public static func retryCalendarLabel(after raw: String?) -> String? {
+        guard sanitizedCalendarName(raw) == nil, let label = accountLabel(raw) else { return nil }
+        return label
+    }
+
+    /// "Personal" for a consumer mail domain, "Work" for any other domain, nil
+    /// when the name isn't an email address. The domain list is a lookup table of
+    /// providers, like the meeting-host list, not a judgement about events.
+    static func accountLabel(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().split(separator: "@")
+        guard parts.count == 2, parts[1].contains(".") else { return nil }
+        let consumer: Set<String> = [
+            "gmail.com", "googlemail.com", "icloud.com", "me.com", "mac.com",
+            "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com",
+            "aol.com", "proton.me", "protonmail.com"
+        ]
+        return consumer.contains(String(parts[1])) ? "Personal" : "Work"
     }
 }
 

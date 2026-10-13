@@ -1,0 +1,41 @@
+S5 · 30 titles × 4 calendar contexts × 1 passes
+
+TITLE                           WANT     none          gmail         work@         Personal      
+-------------------------------------------------------------------------------------------------
+MRI results review              severe   severe        severe        severe        severe        
+Follow-up on lab results        severe   severe        severe        severe        severe        
+Cardiology follow-up            severe   severe        severe        severe        severe        
+Pathology report call           severe   severe        severe        severe        severe        
+Dialysis                        severe   severe        severe        severe        severe        
+Allergy shots                   moderate moderate      moderate      moderate      moderate      
+Annual physical                 moderate moderate      moderate      moderate      moderate      
+Sleep study                     moderate minor ✗       minor ✗       minor ✗       minor ✗       
+Prenatal checkup                moderate severe ✗      severe ✗      severe ✗      severe ✗      
+Therapy intake                  moderate moderate      moderate      moderate      moderate      
+Group therapy                   moderate moderate      moderate      moderate      moderate      
+Counseling                      moderate moderate      moderate      moderate      moderate      
+Parole meeting                  severe   severe        severe        severe        severe        
+Court-ordered anger management  severe   severe        severe        severe        severe        
+Traffic court                   severe   severe        severe        severe        severe        
+Immigration biometrics appointm severe   severe        severe        severe        severe        
+Child support hearing           severe   severe        severe        severe        severe        
+Unemployment benefits interview severe   severe        severe        severe        severe        
+Credit counseling               moderate moderate      moderate      moderate      moderate      
+Notary appointment              moderate moderate      moderate      moderate      severe ✗      
+Memorial service for Grandma    severe   minor ✗       minor ✗       minor ✗       minor ✗       
+Celebration of life for Tom     severe   minor ✗       minor ✗       minor ✗       minor ✗       
+Wake                            ?        minor         minor         minor         minor         
+Shooting lesson                 minor    moderate ✗    moderate ✗    moderate ✗    minor         
+Pick up dry cleaning            minor    moderate ✗    moderate ✗    moderate ✗    moderate ✗    
+Massage                         minor    minor         minor         minor         minor         
+Netflix watch party             minor    minor         minor         minor         minor         
+Oil change                      moderate minor ✗       minor ✗       minor ✗       minor ✗       
+Plumber visit                   moderate moderate      moderate      moderate      moderate      
+Team retro                      moderate moderate      moderate      moderate      moderate      
+
+SUMMARY  (* = answered on the retry with the account label)
+========================================================================
+hcontrol   blocked 0/24 (0%)  saved by retry 0   consequence right 16/24 (67%)  too low 4  too high 4
+heldout    blocked 0/96 (0%)  saved by retry 0   consequence right 72/92 (78%)  too low 12  too high 8
+Error kinds  
+Unstable across passes  0  

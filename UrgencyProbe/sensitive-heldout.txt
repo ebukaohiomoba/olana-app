@@ -1,0 +1,32 @@
+# S5 HELD-OUT sensitive titles. Same format as sensitive.txt.
+# Written AFTER the prompt change, never used to tune it. Do not copy these into the prompt.
+MRI results review | heldout | severe | test results
+Follow-up on lab results | heldout | severe | test results
+Cardiology follow-up | heldout | severe | follow-up
+Pathology report call | heldout | severe | test results
+Dialysis | heldout | severe | medical
+Allergy shots | heldout | moderate | medical
+Annual physical | heldout | moderate | medical
+Sleep study | heldout | moderate | medical
+Prenatal checkup | heldout | moderate | reproductive
+Therapy intake | heldout | moderate | mental health
+Group therapy | heldout | moderate | mental health
+Counseling | heldout | moderate | mental health
+Parole meeting | heldout | severe | legal
+Court-ordered anger management class | heldout | severe | legal
+Traffic court | heldout | severe | legal
+Immigration biometrics appointment | heldout | severe | immigration
+Child support hearing | heldout | severe | legal
+Unemployment benefits interview | heldout | severe | money
+Credit counseling | heldout | moderate | money
+Notary appointment | heldout | moderate | admin
+Memorial service for Grandma | heldout | severe | grief
+Celebration of life for Tom | heldout | severe | grief
+Wake | heldout | ? | grief
+Shooting lesson | heldout | minor | other
+Pick up dry cleaning | hcontrol | minor |
+Massage | hcontrol | minor |
+Netflix watch party | hcontrol | minor |
+Oil change | hcontrol | moderate |
+Plumber visit | hcontrol | moderate |
+Team retro | hcontrol | moderate |

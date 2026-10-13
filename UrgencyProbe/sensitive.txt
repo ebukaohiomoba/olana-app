@@ -1,0 +1,54 @@
+# S5 sensitive titles: title | group | expected consequence (severe moderate minor ?) | note
+# SYNTHETIC, written for the spike; labels follow calib.txt's rubric and are proposals.
+# None are copied from the prompt (Court date, Custody handoff, Bloodwork, Prescription pickup are in it).
+# ? = reasonable people would disagree; reported, not scored.
+Colonoscopy prep | sensitive | severe | medical
+Colonoscopy | sensitive | severe | medical
+Mammogram | sensitive | moderate | medical
+Pap smear | sensitive | moderate | medical
+STI test results | sensitive | severe | test results
+HIV test | sensitive | ? | medical
+Biopsy results | sensitive | severe | test results
+Oncology follow-up | sensitive | severe | follow-up
+Chemo infusion | sensitive | severe | medical
+Prenatal ultrasound | sensitive | ? | reproductive
+IVF egg retrieval | sensitive | severe | reproductive
+Abortion clinic appointment | sensitive | severe | reproductive
+Vasectomy consult | sensitive | moderate | reproductive
+Erectile dysfunction consult | sensitive | moderate | sexual health
+Dermatology mole check | sensitive | moderate | medical
+Therapy session | sensitive | moderate | mental health
+Couples therapy | sensitive | moderate | mental health
+Psych eval | sensitive | ? | mental health
+Psychiatrist med check | sensitive | ? | mental health
+ADHD assessment | sensitive | moderate | mental health
+Eating disorder support group | sensitive | ? | mental health
+Rehab intake | sensitive | ? | recovery
+AA meeting | sensitive | ? | recovery
+Methadone clinic | sensitive | severe | recovery
+Divorce mediation | sensitive | severe | legal
+Custody hearing | sensitive | severe | legal
+Bankruptcy hearing | sensitive | severe | legal
+DUI arraignment | sensitive | severe | legal
+Probation officer check-in | sensitive | severe | legal
+USCIS green card interview | sensitive | severe | immigration
+Asylum hearing | sensitive | severe | immigration
+Restraining order hearing | sensitive | severe | legal
+Eviction hearing | sensitive | severe | legal
+Deposition | sensitive | severe | legal
+Jury duty | sensitive | severe | legal
+Funeral | sensitive | severe | grief
+Hospice visit with Dad | sensitive | ? | grief
+Drug test for new job | sensitive | severe | employment
+Debt collector call | sensitive | ? | money
+Gun range | sensitive | minor | other
+Dentist cleaning | control | moderate |
+Team standup | control | ? |
+Haircut | control | ? |
+Grocery run | control | minor |
+Dinner with Sam | control | ? |
+Yoga class | control | minor |
+Car service | control | moderate |
+Book club | control | minor |
+Quarterly review | control | moderate |
+Parent-teacher conference | control | moderate |

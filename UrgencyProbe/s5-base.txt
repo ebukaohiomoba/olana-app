@@ -1,0 +1,61 @@
+S5 BASELINE (prompt v3, old retry) · 50 titles × 4 calendar contexts × 1 passes
+
+TITLE                           WANT     none          gmail         work@         Personal      
+-------------------------------------------------------------------------------------------------
+Colonoscopy prep                severe   severe        severe        severe        severe        
+Colonoscopy                     severe   severe        severe        severe        severe        
+Mammogram                       moderate moderate      moderate      moderate      moderate      
+Pap smear                       moderate moderate      moderate      moderate      moderate      
+STI test results                severe   minor ✗       minor ✗       minor ✗       minor ✗       
+HIV test                        ?        moderate      moderate      moderate      moderate      
+Biopsy results                  severe   minor ✗       minor ✗       minor ✗       minor ✗       
+Oncology follow-up              severe   severe        severe        severe        severe        
+Chemo infusion                  severe   severe        severe        severe        severe        
+Prenatal ultrasound             ?        minor         minor         minor         minor         
+IVF egg retrieval               severe   severe        severe        severe        severe        
+Abortion clinic appointment     severe   moderate ✗    moderate ✗    moderate ✗    moderate ✗    
+Vasectomy consult               moderate severe ✗      severe ✗      severe ✗      severe ✗      
+Erectile dysfunction consult    moderate moderate      moderate      moderate      moderate      
+Dermatology mole check          moderate moderate      moderate      moderate      moderate      
+Therapy session                 moderate moderate      moderate      moderate      moderate      
+Couples therapy                 moderate moderate      moderate      moderate      moderate      
+Psych eval                      ?        moderate      moderate      moderate      moderate      
+Psychiatrist med check          ?        moderate      moderate      moderate      moderate      
+ADHD assessment                 moderate moderate      moderate      moderate      moderate      
+Eating disorder support group   ?        minor         minor         minor         minor         
+Rehab intake                    ?        moderate      moderate      moderate      moderate      
+AA meeting                      ?        minor         minor         minor         moderate      
+Methadone clinic                severe   BLOCKED       BLOCKED       BLOCKED       BLOCKED       
+Divorce mediation               severe   severe        severe        severe        severe        
+Custody hearing                 severe   severe        severe        severe        severe        
+Bankruptcy hearing              severe   BLOCKED       BLOCKED       BLOCKED       severe        
+DUI arraignment                 severe   severe        severe        severe        severe        
+Probation officer check-in      severe   moderate ✗    moderate ✗    moderate ✗    moderate ✗    
+USCIS green card interview      severe   severe        severe        severe        severe        
+Asylum hearing                  severe   severe        severe        severe        severe        
+Restraining order hearing       severe   severe        severe        severe        severe        
+Eviction hearing                severe   severe        severe        severe        severe        
+Deposition                      severe   severe        severe        severe        severe        
+Jury duty                       severe   severe        severe        severe        severe        
+Funeral                         severe   minor ✗       minor ✗       minor ✗       minor ✗       
+Hospice visit with Dad          ?        minor         minor         minor         moderate      
+Drug test for new job           severe   BLOCKED       BLOCKED       BLOCKED       severe        
+Debt collector call             ?        BLOCKED       BLOCKED       BLOCKED       moderate      
+Gun range                       minor    BLOCKED       BLOCKED       BLOCKED       BLOCKED       
+Dentist cleaning                moderate moderate      moderate      moderate      moderate      
+Team standup                    ?        moderate      moderate      moderate      moderate      
+Haircut                         ?        minor         minor         minor         minor         
+Grocery run                     minor    minor         minor         minor         minor         
+Dinner with Sam                 ?        moderate      moderate      moderate      moderate      
+Yoga class                      minor    minor         minor         minor         minor         
+Car service                     moderate moderate      moderate      moderate      moderate      
+Book club                       minor    minor         minor         minor         minor         
+Quarterly review                moderate moderate      moderate      moderate      moderate      
+Parent-teacher conference       moderate moderate      moderate      moderate      moderate      
+
+SUMMARY  (* = answered on the retry with the account label)
+========================================================================
+control    blocked 0/40 (0%)  saved by retry 0   consequence right 28/28 (100%)  too low 0  too high 0
+sensitive  blocked 17/160 (11%)  saved by retry 0   consequence right 86/110 (78%)  too low 20  too high 4
+Error kinds  guardrail 34
+Unstable across passes  0  

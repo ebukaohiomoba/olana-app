@@ -1023,7 +1023,13 @@ class NotificationEngine: ObservableObject {
     static func scheduleLiveActivityCheck() {
         let request = BGAppRefreshTaskRequest(identifier: "com.olana.liveActivityCheck")
         request.earliestBeginDate = Date(timeIntervalSinceNow: 5 * 60) // no sooner than 5 min
-        try? BGTaskScheduler.shared.submit(request)
+        // Not try?: a missing "fetch" background mode makes this throw notPermitted,
+        // and swallowing it meant the task silently never ran.
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            print("❌ NotificationEngine: BGAppRefreshTask submit failed — \(error)")
+        }
     }
 
     // MARK: - Live Activity

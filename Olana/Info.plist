@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.olana.liveActivityCheck</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -13,20 +17,20 @@
 			</array>
 		</dict>
 	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string></string>
-		<string>remote-notification</string>
-	</array>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Olana reads your calendar so you always know what&apos;s coming — without switching apps. Your data stays on your device and is never shared.</string>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.olana.liveActivityCheck</string>
-	</array>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>Olana uses full-screen alarms to make sure you never miss a critical event, even when your phone is on silent.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Olana reads your calendar so you always know what's coming — without switching apps. Your data stays on your device and is never shared.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Literata72-Regular.ttf</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

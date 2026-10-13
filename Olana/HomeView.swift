@@ -2,446 +2,91 @@
 //  HomeView.swift
 //  Olana
 //
-//  Architecture:
-//  - Single List owns all scrollable content (no List-inside-ScrollView anti-pattern)
-//  - EventRowModel is a value-type snapshot of OlanaEvent — cards never hold a
-//    SwiftData reference, so deleting the last event cannot cause a zombie crash
-//  - confirmationDialog and celebration sheet are presented from HomeView,
-//    not from inside a List row, so they always appear reliably
+//  "The list is the day" (home_literata.html, spec_m0_m1_v2 §14):
+//    date label → next card → the rest of today on one rail.
+//  An empty day says "Your day is open." with a peek at the next thing that
+//  matters.
+//
+//  Everything the screen says comes from HomeDayBuilder, which is pure. This
+//  view snapshots the store into HomeDayBuilder.Input once a minute and draws.
+//
+//  M1-B removed from home: greeting, Olu, the progress card (XP, streak, grace
+//  tokens), the imminent card, the day strip and navigator, the event list and
+//  the floating add button (now the raised + in OlanaTabBar). Their data stays.
 //
 
 import SwiftUI
-import Combine
-
-// MARK: - EventRowModel (value-type snapshot)
-// Cards render from this struct, not from the live SwiftData object.
-// This means deleting an event mid-animation cannot crash the app.
-
-struct EventRowModel: Identifiable, Equatable {
-    let id: UUID
-    let title: String
-    let start: Date
-    let urgency: EventUrgency
-    let recurrenceRule: RecurrenceRule
-    let completed: Bool
-    let isAllDay: Bool
-    let isTask: Bool
-
-    /// Stable identity for ForEach. Recurring series share a key so the
-    /// representative can change without causing an "Invalid update" crash.
-    var homeListKey: String {
-        recurrenceRule == .none ? id.uuidString : "\(title)|\(recurrenceRule.rawValue)"
-    }
-
-    init(_ event: OlanaEvent) {
-        id             = event.id
-        title          = event.title
-        start          = event.start
-        urgency        = event.urgency
-        recurrenceRule = event.recurrenceRule
-        completed      = event.completed
-        isAllDay       = event.isAllDay
-        isTask         = event.isTask
-    }
-}
-
-// MARK: - HomeView
+import EventKit
 
 struct HomeView: View {
     @EnvironmentObject private var store: EventStore
-    @Environment(\.olanaTheme) private var theme
+    @EnvironmentObject private var calendarManager: CalendarIntegrationManager
+    @EnvironmentObject private var calendarDataStore: CalendarDataStore
+    @Environment(\.homePalette) private var c
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var notificationSettings = NotificationSettings.shared
 
-    // ── Navigation / sheets ──────────────────────────────────────────
-    @State private var showingAdd       = false
-    @State private var editingEvent: OlanaEvent? = nil
-    @State private var showingProfile   = false
+    @State private var editingEvent: OlanaEvent?
 
-    // ── Delete confirmation (lifted out of list rows) ─────────────────
+    // Delete confirmation for recurring events
     @State private var pendingDeleteID: UUID?
     @State private var showDeleteChoice = false
 
-    // ── Celebration sheet (lifted out of list rows) ───────────────────
-    @State private var celebrationData: (xp: Int, rewards: [String], newBadges: [Badge], eventTitle: String)?
-    @State private var showCelebrationModal = false
-
-    // ── Banner ────────────────────────────────────────────────────────
-    @State private var bannerEvent: OlanaEvent?
-    @State private var snoozed: [UUID: Date] = [:]
-    @State private var bannerTimer: Timer?
-
-    // ── Greeting ──────────────────────────────────────────────────────
-    @State private var greeting: String = ""
-    @State private var motivationalMessage: String = ""
-    @State private var greetingTimer: Timer?
+    // 15-minute nudge and Live Activity start
     @State private var isViewVisible = false
-
-    // ── Day navigator ─────────────────────────────────────────────────
-    @State private var selectedDay: Date = Calendar.current.startOfDay(for: Date())
-
-    // ── Olu ───────────────────────────────────────────────────────────
-    @StateObject private var oluManager = OluManager()
-
-    // ── Calendar integration ──────────────────────────────────────────
-    @EnvironmentObject private var calendarManager: CalendarIntegrationManager
-    @EnvironmentObject private var calendarDataStore: CalendarDataStore
-    /// Ticks every 60 s to refresh ImminentEventCard countdown and check for nudges.
-    @State private var imminentTick: Int = 0
     @State private var imminentTimer: Timer?
-    /// Tracks which event IDs have already triggered a 15-minute nudge (this session).
     @State private var nudgedIDs: Set<String> = []
-    /// Text shown in the ephemeral nudge banner (nil = hidden).
-    @State private var nudgeBannerText: String? = nil
+    @State private var nudgeBannerText: String?
     @State private var nudgeDismissTimer: Timer?
-
-    private var timeGreeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<17: return "Good afternoon"
-        default:     return "Good evening"
-        }
-    }
-
-    /// The single most pressing upcoming event, with its score and reason.
-    /// nil when nothing qualifies, which is the common and correct case.
-    private var focus: (event: OlanaEvent, result: UrgencyCombiner.Result, reason: String)? {
-        guard let event = store.focusEvent,
-              let sem = event.cachedSemantics,
-              let result = UrgencyCombiner.score(semantics: sem, start: event.start)
-        else { return nil }
-        return (event, result, UrgencyCombiner.explain(result, semantics: sem, start: event.start))
-    }
-
-    private var eventsForSelectedDay: [EventRowModel] {
-        let cal = Calendar.current
-        return store.homeDisplayEvents
-            .filter { cal.isDate($0.start, inSameDayAs: selectedDay) }
-            .map(EventRowModel.init)
-    }
-
-    private func dayLabel(for date: Date) -> String {
-        let cal = Calendar.current
-        if cal.isDateInToday(date)     { return "Today" }
-        if cal.isDateInTomorrow(date)  { return "Tomorrow" }
-        if cal.isDateInYesterday(date) { return "Yesterday" }
-        return date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
-    }
-
-    private let motivationalMessages = [
-        "Keep up the great work to earn more rewards!",
-        "Earn badges and celebrate your wins!",
-        "No win is too small!",
-        "Stack good days until you reach your goal!",
-        "Keep going, you've got this!",
-        "Continue to push through!",
-        "You can change your life with one good day!"
-    ]
-
-    // MARK: - Body
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottomTrailing) {
-
-                // Background gradient — sits behind the List
-                LinearGradient(
-                    colors: [theme.colors.canvasStart, theme.colors.canvasEnd],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
-                // ── Single List for all scrollable content ─────────────
-                // Using one List eliminates the ScrollView+List conflict that
-                // caused the UICollectionView "Invalid update" crash.
-                List {
-
-                    // ── Welcome: greeting + Olu ──────────────────────
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(greeting)
-                                .font(.system(size: 34, weight: .bold, design: .serif))
-                                .foregroundStyle(theme.colors.ink)
-                            Text(motivationalMessage)
-                                .font(.system(size: 15, weight: .light))
-                                .italic()
-                                .foregroundStyle(theme.colors.slate)
-                                .lineSpacing(2)
-                        }
-                        Spacer()
-                        OluView(state: $oluManager.state, size: 170)
-                    }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 0, trailing: 16))
-
-                    // ── Progress card ────────────────────────────────
-                    // Button + navigationDestination avoids the automatic
-                    // disclosure chevron that NavigationLink adds in a List.
-                    Button { showingProfile = true } label: {
-                        ProgressCardContent()
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 16, trailing: 16))
-
-                    // ── Imminent Event Card ───────────────────────────
-                    if calendarDataStore.preferences.showImminentCard {
-                        ImminentEventCard(
-                            windowMinutes: calendarDataStore.preferences.imminentWindowMinutes,
-                            timerTick: imminentTick
-                        )
-                        .environmentObject(store)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 8, trailing: 16))
-                    }
-
-                    // ── Day navigator ─────────────────────────────────
-                    HStack(spacing: 0) {
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                selectedDay = Calendar.current.date(byAdding: .day, value: -1, to: selectedDay) ?? selectedDay
-                            }
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(theme.colors.ribbon)
-                                .frame(width: 36, height: 36)
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-
-                        VStack(spacing: 3) {
-                            HStack(spacing: 6) {
-                                Text(dayLabel(for: selectedDay))
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .tracking(1.4)
-                                    .textCase(.uppercase)
-                                    .foregroundStyle(theme.colors.ink)
-
-                                if !Calendar.current.isDateInToday(selectedDay) {
-                                    Button("Today") {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                            selectedDay = Calendar.current.startOfDay(for: Date())
-                                        }
-                                    }
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(theme.colors.ribbon)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(theme.colors.ribbon.opacity(0.12)))
-                                }
-                            }
-
-                            let count = eventsForSelectedDay.count
-                            Text(count == 0 ? "No events" : "\(count) event\(count == 1 ? "" : "s")")
-                                .font(.caption)
-                                .foregroundStyle(theme.colors.slate.opacity(0.7))
-                        }
-
-                        Spacer()
-
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                selectedDay = Calendar.current.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDay
-                            }
-                        } label: {
-                            Image(systemName: "chevron.right")
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(theme.colors.ribbon)
-                                .frame(width: 36, height: 36)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 4, trailing: 16))
-
-                    // ── The one thing worth attention ────────────────
-                    // Only on Today: while browsing other days a "right now"
-                    // card is noise rather than help.
-                    if Calendar.current.isDateInToday(selectedDay), let f = focus {
-                        FocusCard(event: f.event, result: f.result, reason: f.reason) {
-                            editingEvent = store.events.first { $0.id == f.event.id }
-                        }
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 12, trailing: 16))
-                    }
-
-                    // ── Events for selected day or empty state ────────
-                    if eventsForSelectedDay.isEmpty {
-                        EmptyStateView()
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                    } else {
-                        ForEach(eventsForSelectedDay, id: \.homeListKey) { model in
-                            EventCardRow(
-                                model: model,
-                                onToggleComplete: { id, title in
-                                    handleCompletion(id: id, title: title)
-                                },
-                                onUncomplete: { id in
-                                    _ = store.toggleEventCompletion(id)
-                                },
-                                onEdit: {
-                                    // Look up the live event by ID at tap time —
-                                    // safe because the user just tapped Edit (event exists)
-                                    editingEvent = store.events.first { $0.id == model.id }
-                                },
-                                onDeleteIntent: { id, isRecurring in
-                                    handleDeleteIntent(id: id, isRecurring: isRecurring)
-                                }
-                            )
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        }
-                    }
-
-                    // Bottom padding so content clears the FAB
-                    Color.clear.frame(height: 96)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
+            TimelineView(.everyMinute) { context in
+                let day = buildDay(now: context.date)
+                ScrollView {
+                    HomeScreenContent(day: day,
+                                      syncText: syncText(now: context.date, alwaysShow: day.isOpen),
+                                      onSelect: { open($0) },
+                                      onToggleDone: { toggleDone($0) },
+                                      onDelete: { handleDeleteIntent(id: $0, isRecurring: $1) })
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 10)
-                        .onChanged { _ in oluManager.userDidInteract() }
-                )
-
-                // ── 15-minute nudge banner ────────────────────────────
-                if let nudge = nudgeBannerText {
-                    VStack {
-                        HStack(spacing: 10) {
-                            Image(systemName: "bell.fill")
-                                .font(.caption)
-                                .foregroundStyle(theme.colors.ribbon)
-                            Text(nudge)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(theme.colors.ink)
-                                .lineLimit(2)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(theme.colors.paper)
-                                .shadow(color: theme.colors.pillShadow, radius: 8, x: 0, y: 4)
-                        )
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(theme.colors.cardBorder, lineWidth: 1))
-                        .padding(.horizontal, 24)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        Spacer()
-                    }
-                    .padding(.top, 16)
-                }
-
-                // ── T-5 banner ────────────────────────────────────────
-                if let be = bannerEvent {
-                    VStack {
-                        Spacer()
-                        TMinusFiveBanner(
-                            title: be.title,
-                            reasons: bannerReasons(for: be),
-                            onStart: { bannerEvent = nil },
-                            onSnooze: { interval in
-                                snoozed[be.id] = Date().addingTimeInterval(interval)
-                                bannerEvent = nil
-                            }
-                        )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .padding(.bottom, 100)
-                    }
-                    .ignoresSafeArea(edges: .bottom)
-                }
-
-                // ── FAB ───────────────────────────────────────────────
-                Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    showingAdd = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 60, height: 60)
-                        .background(
-                            Circle()
-                                .fill(LinearGradient(
-                                    colors: [theme.colors.ribbon, theme.colors.ribbon.opacity(0.85)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ))
-                        )
-                        .shadow(color: theme.colors.ribbon.opacity(0.3), radius: 12, x: 0, y: 6)
-                        .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 10)
-                }
-                .padding(.trailing, 24)
-                .padding(.bottom, 20)
+                .scrollIndicators(.hidden)
             }
+            .background(c.bg.ignoresSafeArea())
+            .overlay(alignment: .top) { nudgeBanner }
+            .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 isViewVisible = true
-                refreshBannerCandidate()
-                greeting = timeGreeting
-                motivationalMessage = motivationalMessages.randomElement() ?? motivationalMessages[0]
-                startTimersIfNeeded()
                 startImminentTimerIfNeeded()
-                // Quick-sync calendar events on each foreground appearance,
-                // then extract semantics for anything new so the ranking is live
-                // on cold launch rather than only after a background round trip.
+                // Quick-sync on each appearance, then extract semantics for
+                // anything new so the card is live on cold launch.
                 Task {
                     await calendarManager.performQuickSync()
                     await store.backfillSemantics()
                 }
-                // Catch up: start Live Activities for any events already in the lead window.
                 let events = store.events
                 Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
             }
             .onDisappear {
                 isViewVisible = false
-                stopTimers()
                 stopImminentTimer()
             }
             .onChange(of: scenePhase) { _, newPhase in
                 switch newPhase {
                 case .active:
                     guard isViewVisible else { return }
-                    refreshBannerCandidate()
-                    updateGreetingIfNeeded()
-                    startTimersIfNeeded()
                     startImminentTimerIfNeeded()
-                    oluManager.updateForTimeOfDay()
                     Task {
                         await calendarManager.performQuickSync()
                         await store.backfillSemantics()
                     }
-                    // Catch up after being suspended in the background.
                     let events = store.events
                     Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
                 case .background, .inactive:
-                    stopTimers()
                     stopImminentTimer()
                 @unknown default:
                     break
                 }
-            }
-            // ── Navigation destinations ───────────────────────────────
-            .navigationDestination(isPresented: $showingProfile) {
-                ProfileView()
-            }
-            // ── Sheets ────────────────────────────────────────────────
-            .sheet(isPresented: $showingAdd) {
-                AddEventView()
-                    .environmentObject(store)
-                    .presentationDetents([.fraction(0.75), .large])
-                    .presentationDragIndicator(.visible)
-                    .presentationCornerRadius(24)
             }
             .sheet(item: $editingEvent) { event in
                 EditEventGlassPanel(event: event) { updated in
@@ -455,18 +100,6 @@ struct HomeView: View {
                     )
                 }
             }
-            .sheet(isPresented: $showCelebrationModal) {
-                if let data = celebrationData {
-                    CompletionCelebrationView(
-                        xpEarned: data.xp,
-                        streakDays: XPManager.shared.streakDays,
-                        eventTitle: data.eventTitle,
-                        rewards: data.rewards,
-                        newBadges: data.newBadges
-                    )
-                }
-            }
-            // ── Delete confirmation (stable: presented from NavigationStack) ──
             .confirmationDialog(
                 "Delete recurring event?",
                 isPresented: $showDeleteChoice,
@@ -489,20 +122,88 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Intent handlers
+    // MARK: - Day
 
-    private func handleCompletion(id: UUID, title: String) {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        if let result = store.toggleEventCompletion(id) {
-            celebrationData = (
-                xp: result.xp,
-                rewards: result.rewards,
-                newBadges: result.newBadges,
-                eventTitle: title
-            )
-            showCelebrationModal = true
-            oluManager.celebrate()
+    private func buildDay(now: Date) -> HomeDay {
+        let cal = Calendar.current
+        let focusID = store.focusEvent?.id
+        // Today's events, plus the focus event wherever it falls.
+        let inputs = store.events
+            .filter { cal.isDate($0.start, inSameDayAs: now) || $0.id == focusID }
+            .map { input($0, now: now) }
+        return HomeDayBuilder.build(inputs: inputs, focusID: focusID, now: now, bed: bedTime(now: now))
+    }
+
+    private func input(_ e: OlanaEvent, now: Date) -> HomeDayBuilder.Input {
+        let prep = e.cachedSemantics?.effectivePrep.hours ?? 0
+        return HomeDayBuilder.Input(
+            id: e.id, title: e.title, start: e.start, end: e.end,
+            isAllDay: e.isAllDay, isTask: e.isTask,
+            completed: e.completed, completedAt: e.completedAt,
+            isRecurring: e.recurrenceRule != .none,
+            location: e.location, urgency: e.urgency,
+            scored: UrgencyManager.shared.cachedScore(for: e, now: now),
+            prepHours: prep > 0 ? prep : nil)
+    }
+
+    /// Quiet-hours start today, used as "Bed around 10". nil when quiet hours are off.
+    private func bedTime(now: Date) -> Date? {
+        guard notificationSettings.quietHoursEnabled else { return nil }
+        let cal = Calendar.current
+        let hm = cal.dateComponents([.hour, .minute], from: notificationSettings.quietHoursStart)
+        return cal.date(bySettingHour: hm.hour ?? 22, minute: hm.minute ?? 0, second: 0, of: now)
+    }
+
+    // MARK: - Pieces
+
+    private var syncSources: String {
+        var names: [String] = []
+        if calendarManager.authorizationStatus == .fullAccess { names.append("Apple Calendar") }
+        if calendarManager.hasGoogleAccounts { names.append("Google") }
+        return names.isEmpty ? "Calendars" : names.joined(separator: " and ")
+    }
+
+    /// "Apple Calendar and Google synced 2 min ago". On a full day it only
+    /// appears once the data is over 2 h old (spec §5.6, stale sync).
+    private func syncText(now: Date, alwaysShow: Bool) -> HomeScreenContent.Sync? {
+        guard let last = calendarManager.lastSyncDate else { return nil }
+        let minutes = max(0, Int(now.timeIntervalSince(last) / 60))
+        if minutes >= 120 { return .init(text: "Updated \(minutes / 60) h ago", fresh: false) }
+        guard alwaysShow else { return nil }
+        return .init(text: "\(syncSources) synced \(minutes < 1 ? "just now" : "\(minutes) min ago")", fresh: true)
+    }
+
+    @ViewBuilder
+    private var nudgeBanner: some View {
+        if let nudge = nudgeBannerText {
+            HStack(spacing: 10) {
+                Image(systemName: "bell.fill")
+                    .font(.caption)
+                    .foregroundStyle(c.goldText)
+                Text(nudge)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(c.text)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 12).fill(c.card))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(c.line, lineWidth: 1))
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
+    }
+
+    // MARK: - Intents
+
+    private func open(_ id: UUID) {
+        editingEvent = store.events.first { $0.id == id }
+    }
+
+    private func toggleDone(_ id: UUID) {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        _ = store.toggleEventCompletion(id)
     }
 
     private func handleDeleteIntent(id: UUID, isRecurring: Bool) {
@@ -514,56 +215,11 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Banner
-
-    private func refreshBannerCandidate() {
-        let now    = Date()
-        let window: TimeInterval = 5 * 60
-        let sorted = store.events.filter { $0.start >= now }.sorted { $0.start < $1.start }
-        guard let next = sorted.first else { bannerEvent = nil; return }
-        if let until = snoozed[next.id], until > now { bannerEvent = nil; return }
-        bannerEvent = next.start.timeIntervalSince(now) <= window ? next : nil
-    }
-
-    private func bannerReasons(for event: OlanaEvent) -> [String] {
-        let minutes = max(0, Int(event.start.timeIntervalSince(Date()) / 60))
-        return [minutes == 0 ? "starts now" : "starts in \(minutes)m"]
-    }
-
-    // MARK: - Timers
-
-    private func startTimersIfNeeded() {
-        guard bannerTimer == nil && greetingTimer == nil else { return }
-        let hasUpcomingNearby = store.events.contains {
-            let t = $0.start.timeIntervalSince(Date())
-            return t > 0 && t <= 30 * 60
-        }
-        if hasUpcomingNearby {
-            bannerTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
-                self.refreshBannerCandidate()
-            }
-        }
-        greetingTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
-            self.updateGreetingIfNeeded()
-        }
-    }
-
-    private func stopTimers() {
-        bannerTimer?.invalidate();   bannerTimer  = nil
-        greetingTimer?.invalidate(); greetingTimer = nil
-    }
-
-    private func updateGreetingIfNeeded() {
-        let new = timeGreeting
-        if new != greeting { greeting = new }
-    }
-
-    // MARK: - Imminent Timer (60 s) — countdown + 15-min nudge
+    // MARK: - Imminent timer (60 s): Live Activities + 15-minute nudge
 
     private func startImminentTimerIfNeeded() {
         guard imminentTimer == nil else { return }
         imminentTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
-            self.imminentTick &+= 1      // wraps instead of overflowing
             self.checkForImminentNudge()
         }
     }
@@ -592,14 +248,10 @@ struct HomeView: View {
             guard !nudgedIDs.contains(key) else { continue }
 
             nudgedIDs.insert(key)
-            oluManager.imminentNudge()
 
-            let timeFmt = DateFormatter()
-            timeFmt.timeStyle = .short
-            let nudgeText = "Your \(timeFmt.string(from: event.start)) is coming up. Want to wrap up what you're doing?"
+            let nudgeText = "Your \(HomeFormat.clock(event.start)) is coming up. Want to wrap up what you're doing?"
             showNudgeBanner(nudgeText)
 
-            // Start the Live Activity countdown now that we're in the 15-minute window.
             let capturedEvent = event
             Task { await NotificationEngine.shared.startLiveActivityNow(for: capturedEvent) }
 
@@ -616,325 +268,132 @@ struct HomeView: View {
     }
 }
 
-// MARK: - EventCardRow
+// MARK: - Screen content
 
-private struct EventCardRow: View {
-    @Environment(\.olanaTheme) private var theme
+/// Everything below the status bar, from a HomeDay. Shared by HomeView and the
+/// DEBUG fixture screen so both draw exactly the same thing.
+struct HomeScreenContent: View {
+    struct Sync: Equatable { let text: String; let fresh: Bool }
 
-    let model: EventRowModel
-    var onToggleComplete: ((UUID, String) -> Void)? = nil
-    var onUncomplete: ((UUID) -> Void)? = nil
-    var onEdit: (() -> Void)? = nil
-    var onDeleteIntent: ((UUID, Bool) -> Void)? = nil
+    let day: HomeDay
+    let syncText: Sync?
+    var onSelect: (UUID) -> Void = { _ in }
+    var onToggleDone: (UUID) -> Void = { _ in }
+    var onDelete: (UUID, Bool) -> Void = { _, _ in }
 
-    @State private var showUncompleteAlert = false
-
-    private var accentColor: Color {
-        if model.completed { return theme.colors.success }
-        switch model.urgency {
-        case .high:   return theme.colors.urgencyHigh
-        case .medium: return theme.colors.urgencyMedium
-        case .low:    return theme.colors.urgencyLow
-        }
-    }
-
-    private static let timeFmt: DateFormatter = {
-        let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none; return f
-    }()
-
-    private var subtitleText: String {
-        var parts = [relativeDateLabel(for: model.start)]
-        if !model.isAllDay {
-            parts.append(Self.timeFmt.string(from: model.start))
-        }
-        parts.append(model.urgency.displayName)
-        return parts.joined(separator: " · ")
-    }
-
-    private func relativeDateLabel(for date: Date) -> String {
-        let cal = Calendar.current
-        if date < Date()              { return "Past due" }
-        if cal.isDateInToday(date)    { return "Due today" }
-        if cal.isDateInTomorrow(date) { return "Due tomorrow" }
-        let days = cal.dateComponents([.day], from: Date(), to: date).day ?? 0
-        if days <= 7  { return "This week" }
-        if days <= 14 { return "Next week" }
-        return "Due \(date.formatted(.dateTime.month(.abbreviated).day()))"
-    }
+    @Environment(\.homePalette) private var c
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            // Left accent bar
-            Capsule()
-                .fill(accentColor)
-                .frame(width: 4, height: 46)
+        VStack(alignment: .leading, spacing: 0) {
+            dateLabel
+                .padding(.top, 6)
+                .padding(.bottom, 16)
 
-            // Title + subtitle
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(model.title)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(theme.colors.ink)
-                        .lineLimit(1)
-                        .strikethrough(model.completed, color: .secondary)
-
-                    Text(model.isTask ? "Task" : "Event")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(0.4)
-                        .foregroundStyle(model.isTask ? theme.colors.slate : theme.colors.ribbon)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule().fill((model.isTask ? theme.colors.slate : theme.colors.ribbon).opacity(0.12))
-                        )
+            if day.isOpen {
+                OpenDayView(day: day, onSelect: onSelect)
+            } else {
+                if let card = day.card {
+                    NextCardView(card: card) { onSelect(card.eventID) }
+                        .padding(.bottom, 16)
                 }
+                DayRailView(day: day, onSelect: onSelect,
+                            onToggleDone: onToggleDone, onDelete: onDelete)
+            }
 
-                Text(subtitleText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            if let sync = syncText {
+                HStack(spacing: 5) {
+                    if sync.fresh { Text("●").foregroundStyle(c.synced) }
+                    Text(sync.text).foregroundStyle(c.faint)
+                }
+                .font(.caption)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 28)
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.bottom, 24)
+    }
 
-                if model.recurrenceRule != .none {
-                    HStack(spacing: 4) {
-                        Image(systemName: "repeat")
-                            .font(.caption2)
-                        Text(model.recurrenceRule.repeatLabel)
-                            .font(.caption2)
+    private var dateLabel: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(day.now.formatted(.dateTime.weekday(.wide)))
+                .font(.headline)
+                .foregroundStyle(c.text)
+            Text(day.now.formatted(.dateTime.month(.wide).day()))
+                .font(.subheadline)
+                .foregroundStyle(c.muted)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+// MARK: - Open day
+
+/// "Your day is open." (spec §14.6): one serif line, one sentence, a peek at
+/// the next thing that matters, and a dotted free rail to wind down.
+private struct OpenDayView: View {
+    let day: HomeDay
+    var onSelect: (UUID) -> Void
+
+    @Environment(\.homePalette) private var c
+    @ScaledMetric(relativeTo: .title) private var l1Size: CGFloat = 33
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            (Text("Your day is ").foregroundStyle(c.text) + Text("open.").foregroundStyle(c.goldText))
+                .font(HomeType.serif(size: l1Size))
+                .tracking(-0.7)
+                .accessibilityAddTraits(.isHeader)
+
+            Text(!day.done.isEmpty
+                 ? "Nothing else on your calendars today, so there's nothing to prep for."
+                 : "Nothing on your calendars today, so there's nothing to prep for.")
+                .font(.subheadline)
+                .foregroundStyle(c.muted)
+                .padding(.top, 10)
+
+            if let peek = day.peek {
+                Button { onSelect(peek.eventID) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 16))
+                            .foregroundStyle(c.muted)
+                            .frame(width: 32, height: 32)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(c.card2))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(peek.title).font(.callout).foregroundStyle(c.text).lineLimit(1)
+                            Text("\(HomeFormat.dayName(peek.start, now: day.now).capitalizedFirst) \(peek.start.formatted(date: .omitted, time: .shortened)) · next thing that matters")
+                                .font(.caption)
+                                .foregroundStyle(c.muted)
+                                .lineLimit(2)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote)
+                            .foregroundStyle(c.faint)
                     }
-                    .foregroundStyle(theme.colors.slate)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(RoundedRectangle(cornerRadius: 18).fill(c.card))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.line, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
+                .padding(.top, 18)
             }
-            .opacity(model.completed ? 0.55 : 1.0)
 
-            Spacer()
-
-            // Completion circle
-            Button {
-                if model.completed {
-                    showUncompleteAlert = true
-                } else {
-                    onToggleComplete?(model.id, model.title)
-                }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(model.completed ? accentColor : Color.clear)
-                        .frame(width: 30, height: 30)
-                        .overlay(
-                            Circle().stroke(
-                                model.completed ? Color.clear : accentColor.opacity(0.45),
-                                lineWidth: 1.5
-                            )
-                        )
-                    if model.completed {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                }
+            if !day.done.isEmpty || day.bed != nil {
+                DayRailView(day: day, freeTime: true, onSelect: onSelect)
+                    .padding(.top, 26)
             }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(theme.colors.paper)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(theme.colors.cardBorder, lineWidth: 1)
-        )
-        .shadow(color: theme.colors.pillShadow, radius: 6, x: 0, y: 2)
-        // Swipe left to reveal Edit and Delete
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) {
-                onDeleteIntent?(model.id, model.recurrenceRule != .none)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            Button {
-                onEdit?()
-            } label: {
-                Label("Edit", systemImage: "pencil")
-            }
-            .tint(.blue)
-        }
-        // Uncomplete alert stays local — alerts inside list rows work reliably
-        .alert("Undo completion?", isPresented: $showUncompleteAlert) {
-            Button("Yes, undo", role: .destructive) {
-                onUncomplete?(model.id)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will mark the event as incomplete. Your XP will remain.")
         }
     }
 }
-
-// MARK: - Empty State
-
-private struct EmptyStateView: View {
-    @Environment(\.olanaTheme) private var theme
-
-    var body: some View {
-        VStack(spacing: 20) {
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(
-                        colors: [theme.colors.ribbon.opacity(0.1), theme.colors.ribbon.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                    .frame(width: 100, height: 100)
-                    .shadow(color: theme.colors.ribbon.opacity(0.1), radius: 20, x: 0, y: 10)
-                Image(systemName: "calendar.badge.clock")
-                    .font(.system(size: 44))
-                    .foregroundStyle(LinearGradient(
-                        colors: [theme.colors.ribbon, theme.colors.ribbon.opacity(0.7)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-            }
-            VStack(spacing: 8) {
-                Text("No upcoming events")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(theme.colors.ink)
-                Text("Tap the + button to create your first event")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 56)
-        .padding(.horizontal, 24)
-        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(theme.colors.paper))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(theme.colors.cardBorder, lineWidth: 1))
-        .shadow(color: theme.colors.pillShadow, radius: 10, x: 0, y: 4)
-    }
-}
-
-// MARK: - Progress Card
-
-private struct ProgressCardContent: View {
-    @Environment(\.olanaTheme) private var theme
-    @Environment(\.colorScheme) private var colorScheme
-    @ObservedObject private var xpManager = XPManager.shared
-
-    private var isLight: Bool { colorScheme == .light }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Your Progress")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(isLight ? .white : theme.colors.ink)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(isLight ? Color.white.opacity(0.7) : theme.colors.slate)
-            }
-            HStack(spacing: 0) {
-                StatColumn(
-                    icon: "flame.fill",
-                    iconGradient: LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom),
-                    value: "\(xpManager.streakDays)",
-                    label: "Streak Days",
-                    textColor: isLight ? .white : nil
-                )
-                Rectangle().fill(Color.white.opacity(0.25)).frame(width: 1, height: 60).padding(.horizontal, 8)
-                StatColumn(
-                    icon: "sparkles",
-                    iconColor: isLight ? .white : theme.colors.ribbon,
-                    value: "\(xpManager.graceTokens)",
-                    label: "Grace Tokens",
-                    textColor: isLight ? .white : nil
-                )
-                Rectangle().fill(Color.white.opacity(0.25)).frame(width: 1, height: 60).padding(.horizontal, 8)
-                StatColumn(
-                    icon: "star.fill",
-                    iconColor: .yellow,
-                    value: formatXP(xpManager.totalXP),
-                    label: "Total XP",
-                    textColor: isLight ? .white : nil
-                )
-            }
-        }
-        .padding(24)
-        .background(
-            ZStack(alignment: .topTrailing) {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [theme.colors.heroStart, theme.colors.heroEnd],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                Circle()
-                    .fill(Color.white.opacity(isLight ? 0.09 : 0.05))
-                    .frame(width: 110, height: 110)
-                    .offset(x: 28, y: -28)
-                    .allowsHitTesting(false)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        )
-        .shadow(color: isLight ? theme.colors.heroEnd.opacity(0.35) : Color.black.opacity(0.4), radius: 16, x: 0, y: 8)
-        .shadow(color: Color.black.opacity(0.08), radius: 24, x: 0, y: 12)
-    }
-
-    private func formatXP(_ xp: Int) -> String {
-        if xp >= 10000 { return String(format: "%.1fk", Double(xp) / 1000.0) }
-        if xp >= 1000  {
-            let f = NumberFormatter(); f.numberStyle = .decimal
-            return f.string(from: NSNumber(value: xp)) ?? "\(xp)"
-        }
-        return "\(xp)"
-    }
-}
-
-// MARK: - Stat Column
-
-private struct StatColumn: View {
-    @Environment(\.olanaTheme) private var theme
-    let icon: String
-    var iconGradient: LinearGradient? = nil
-    var iconColor: Color? = nil
-    let value: String
-    let label: String
-    var textColor: Color? = nil
-
-    private var resolvedText: Color { textColor ?? theme.colors.ink }
-
-    var body: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(0.15))
-                    .frame(width: 48, height: 48)
-                if let gradient = iconGradient {
-                    Image(systemName: icon).font(.title2).foregroundStyle(gradient)
-                        .shadow(color: Color.orange.opacity(0.3), radius: 4, x: 0, y: 2)
-                } else if let color = iconColor {
-                    Image(systemName: icon).font(.title2).foregroundStyle(color)
-                        .shadow(color: color.opacity(0.3), radius: 4, x: 0, y: 2)
-                }
-            }
-            VStack(spacing: 4) {
-                Text(value).font(.system(size: 24, weight: .bold)).foregroundStyle(resolvedText)
-                Text(label).font(.caption.weight(.medium)).foregroundStyle(resolvedText.opacity(0.7))
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Preview
 
 #Preview {
     HomeView()
         .environmentObject(EventStore())
         .environmentObject(CalendarIntegrationManager())
         .environmentObject(CalendarDataStore())
-        .environment(\.olanaTheme, OlanaTheme.light)
+        .homePalette()
 }

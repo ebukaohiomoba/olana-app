@@ -66,7 +66,7 @@ struct FriendsView: View {
                 .padding(.trailing, 24)
                 .padding(.bottom, 20)
             }
-            .navigationTitle("Friends")
+            .navigationTitle("Circles")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingAddFriend) {
                 AddFriendView()

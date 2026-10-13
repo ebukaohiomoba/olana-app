@@ -121,37 +121,53 @@ struct OlanaApp: App {
         FirebaseApp.configure()
     }
 
+    @ViewBuilder
+    private var appRoot: some View {
+        // Splash shows for exactly 3 ms then yields — never gated on
+        // isLoading so a slow/offline Firestore can never keep it stuck.
+        if !splashTimerDone {
+            LaunchView()
+                .onAppear {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 3_000_000)
+                        splashTimerDone = true
+                    }
+                }
+        } else if authManager.currentUser == nil {
+            LoginView()
+        } else if authManager.isLoading || authManager.appUser == nil {
+            // Firebase user is known but the Firestore profile fetch is still
+            // in-flight (or hasn't started yet). Hold on the splash rather than
+            // flashing UsernameSetupView.
+            LaunchView()
+        } else if authManager.appUser?.username.isEmpty != false {
+            UsernameSetupView()
+        } else if !hasCompletedOnboarding {
+            OnboardingContainerView()
+        } else {
+            ContentView()
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
-                // Splash shows for exactly 3 ms then yields — never gated on
-                // isLoading so a slow/offline Firestore can never keep it stuck.
-                if !splashTimerDone {
-                    LaunchView()
-                        .onAppear {
-                            Task { @MainActor in
-                                try? await Task.sleep(nanoseconds: 3_000_000)
-                                splashTimerDone = true
-                            }
-                        }
-                } else if authManager.currentUser == nil {
-                    LoginView()
-                } else if authManager.isLoading || authManager.appUser == nil {
-                    // Firebase user is known but the Firestore profile fetch is still
-                    // in-flight (or hasn't started yet). Hold on the splash rather than
-                    // flashing UsernameSetupView.
-                    LaunchView()
-                } else if authManager.appUser?.username.isEmpty != false {
-                    UsernameSetupView()
-                } else if !hasCompletedOnboarding {
-                    OnboardingContainerView()
+                #if DEBUG
+                if let fixture = HomeFixtures.requested {
+                    HomeFixtureScreen(which: fixture)
                 } else {
-                    ContentView()
+                    appRoot
                 }
+                #else
+                appRoot
+                #endif
             }
             .environmentObject(authManager)
             .olanaThemeProvider(variant: selectedTheme)
             .onAppear {
+                #if DEBUG
+                if HomeFixtures.requested != nil { return }
+                #endif
                 Task { @MainActor in
                     if NotificationEngine.shared.authorizationStatus == .notDetermined {
                         _ = await NotificationEngine.shared.requestAuthorization()

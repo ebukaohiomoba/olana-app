@@ -1,0 +1,38 @@
+S6 · 26 events, title-only vs title + location + notes
+
+TITLE                     GROUP    WANT  TITLE-ONLY            WITH CONTEXT
+--------------------------------------------------------------------------------------------
+Appointment               helps    C     S moderate/difficult  C severe/fixed  ✓ fixed
+Meeting                   helps    C     S moderate/difficult  C severe/difficult  ✓ fixed
+Call                      helps    C     S moderate/difficult  C severe/difficult  ✓ fixed
+Check-in                  helps    C     L minor/flexible      C severe/fixed  ✓ fixed
+Pickup                    helps    C     L minor/flexible      L minor/flexible
+Visit                     helps    C     L minor/flexible      C severe/fixed  ✓ fixed
+Drop off                  helps    C     L minor/flexible      C severe/fixed  ✓ fixed
+Dinner                    helps    S     S moderate/flexible   S moderate/difficult
+Session                   helps    C     L moderate/flexible   C severe/difficult  ✓ fixed
+Appointment               helps    S     S moderate/difficult  S moderate/difficult
+Payment                   helps    C     S moderate/fixed      C severe/fixed  ✓ fixed
+Exam                      helps    C     C severe/fixed        C severe/fixed
+Sync                      helps    L     L minor/flexible      L minor/flexible
+Meeting                   helps    L     S moderate/difficult  S moderate/flexible
+Team standup              noise    L     S moderate/difficult  S moderate/difficult
+Flight to Chicago         noise    C     C severe/fixed        C severe/fixed
+Coffee with Sam           noise    L     L minor/flexible      L minor/flexible
+Book club                 noise    L     L minor/flexible      L minor/flexible
+Yoga class                noise    L     L minor/flexible      L minor/flexible
+Job interview             noise    C     C severe/difficult    C severe/difficult
+Rent due                  noise    C     C severe/fixed        C severe/fixed
+Dentist cleaning          noise    S     S moderate/difficult  S moderate/difficult
+Lunch and learn           noise    L     L minor/flexible      L minor/flexible
+Haircut                   noise    ?     L minor/flexible      S moderate/flexible
+Quarterly planning        noise    ?     L moderate/flexible   L moderate/flexible
+Gym                       noise    L     L minor/flexible      L minor/flexible
+
+SUMMARY
+============================================================
+helps     title    right 4/14 (29%)  over 1  under 9  model failures 0
+helps     context  right 12/14 (86%)  over 1  under 1  model failures 0
+noise     title    right 9/10 (90%)  over 1  under 0  model failures 0
+noise     context  right 9/10 (90%)  over 1  under 0  model failures 0
+Buckets that changed with context: 9/26

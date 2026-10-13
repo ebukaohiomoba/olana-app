@@ -1,0 +1,61 @@
+S5 · 50 titles × 2 calendar contexts × 2 passes
+
+TITLE                             GROUP      NO CAL            PERSONAL
+----------------------------------------------------------------------------------
+Colonoscopy prep                  sensitive  severe,severe     severe,severe
+Colonoscopy                       sensitive  severe,severe     severe,severe
+Mammogram                         sensitive  moderate,moderate moderate,moderate
+Pap smear                         sensitive  moderate,moderate moderate,moderate
+STI test results                  sensitive  minor,minor       minor,minor
+HIV test                          sensitive  moderate,moderate moderate,moderate
+Biopsy results                    sensitive  minor,minor       minor,minor
+Oncology follow-up                sensitive  severe,severe     severe,severe
+Chemo infusion                    sensitive  severe,severe     severe,severe
+Prenatal ultrasound               sensitive  minor,minor       minor,minor
+IVF egg retrieval                 sensitive  severe,severe     severe,severe
+Abortion clinic appointment       sensitive  moderate,moderate moderate,moderate
+Vasectomy consult                 sensitive  severe,severe     severe,severe
+Erectile dysfunction consult      sensitive  moderate,moderate moderate,moderate
+Dermatology mole check            sensitive  moderate,moderate moderate,moderate
+Therapy session                   sensitive  moderate,moderate moderate,moderate
+Couples therapy                   sensitive  moderate,moderate moderate,moderate
+Psych eval                        sensitive  moderate,moderate moderate,moderate
+Psychiatrist med check            sensitive  moderate,moderate moderate,moderate
+ADHD assessment                   sensitive  moderate,moderate moderate,moderate
+Eating disorder support group     sensitive  minor,minor       minor,minor
+Rehab intake                      sensitive  moderate,moderate moderate,moderate
+AA meeting                        sensitive  minor,minor       moderate,moderate
+Methadone clinic                  sensitive  FAIL(other),FAIL( FAIL(other),FAIL(other)
+Divorce mediation                 sensitive  severe,severe     severe,severe
+Custody hearing                   sensitive  severe,severe     severe,severe
+Bankruptcy hearing                sensitive  FAIL(other),FAIL( severe,severe
+DUI arraignment                   sensitive  severe,severe     severe,severe
+Probation officer check-in        sensitive  moderate,moderate moderate,moderate
+USCIS green card interview        sensitive  severe,severe     severe,severe
+Asylum hearing                    sensitive  severe,severe     severe,severe
+Restraining order hearing         sensitive  severe,severe     severe,severe
+Eviction hearing                  sensitive  severe,severe     severe,severe
+Deposition                        sensitive  severe,severe     severe,severe
+Jury duty                         sensitive  severe,severe     severe,severe
+Funeral                           sensitive  minor,minor       minor,minor
+Hospice visit with Dad            sensitive  minor,minor       moderate,moderate
+Drug test for new job             sensitive  FAIL(other),FAIL( severe,severe
+Debt collector call               sensitive  FAIL(other),FAIL( moderate,moderate
+Gun range                         sensitive  FAIL(other),FAIL( FAIL(other),FAIL(other)
+Dentist cleaning                  control    moderate,moderate moderate,moderate
+Team standup                      control    moderate,moderate moderate,moderate
+Haircut                           control    minor,minor       minor,minor
+Grocery run                       control    minor,minor       minor,minor
+Dinner with Sam                   control    moderate,moderate moderate,moderate
+Yoga class                        control    minor,minor       minor,minor
+Car service                       control    moderate,moderate moderate,moderate
+Book club                         control    minor,minor       minor,minor
+Quarterly review                  control    moderate,moderate moderate,moderate
+Parent-teacher conference         control    moderate,moderate moderate,moderate
+
+SUMMARY  (* = needed the retry)
+============================================================
+control     failed after retry 0/40 (0%)   first attempt failed 0/40 (0%)
+sensitive   failed after retry 14/160 (9%)   first attempt failed 14/160 (9%)
+Error kinds  guardrail 28 ("May contain sensitive content")
+Unstable across passes  0  

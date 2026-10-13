@@ -138,29 +138,45 @@ final class AIAssistant: ObservableObject {
         // over three passes on 35 events; default sampling is not.
         let options = GenerationOptions(sampling: .greedy)
 
-        // One retry on failure, with a fresh session.
+        // One retry, with a fresh session.
         //
-        // The safety guardrail raises Refusal sporadically rather than per-title:
-        // measured, "Payday" was refused three times inside a 58-event run and not
-        // once when the same title was sent on its own. A refusal is therefore a
-        // transient condition under sustained extraction, not a verdict about the
-        // event, and it is worth asking again before giving up.
+        // A safety-filter block is deterministic for a given prompt (M0 spike S5:
+        // 40 sensitive titles, identical across passes), so asking the same thing
+        // again only reproduces it. Retry a block only when there is a different,
+        // factual calendar label to send; otherwise give up and let the event fall
+        // back to "Is this important?". Other errors are retried as asked.
+        var retryPrompt = prompt
         for attempt in 0..<2 {
             let session = LanguageModelSession(instructions: EventSemanticsPrompt.instructions)
             do {
                 return try await session.respond(
-                    to: prompt, generating: EventSemantics.self, options: options
+                    to: retryPrompt, generating: EventSemantics.self, options: options
                 ).content
             } catch {
-                if attempt == 0 {
+                guard attempt == 0 else { return nil }
+                // The safety filter surfaces as .refusal ("May contain sensitive content"),
+                // measured on macOS 26; .guardrailViolation is matched too in case that changes.
+                if Self.isSafetyBlock(error) {
+                    guard let label = EventSemanticsPrompt.retryCalendarLabel(after: calendarName) else {
+                        return nil
+                    }
+                    retryPrompt = EventSemanticsPrompt.prompt(title: trimmed, calendarName: label)
+                } else {
                     // Brief pause: retrying immediately tends to reproduce it.
                     try? await Task.sleep(nanoseconds: 250_000_000)
-                    continue
                 }
-                return nil
             }
         }
         return nil
+    }
+
+    /// True when the system safety filter blocked the request rather than the
+    /// model failing for some other reason.
+    nonisolated static func isSafetyBlock(_ error: Error) -> Bool {
+        switch error as? LanguageModelSession.GenerationError {
+        case .refusal?, .guardrailViolation?: return true
+        default: return false
+        }
     }
 
     /// Why an event did or did not get semantics. The cases are handled

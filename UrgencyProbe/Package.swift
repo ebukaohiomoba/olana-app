@@ -32,6 +32,18 @@ let package = Package(
             ]
         ),
         .executableTarget(
+            name: "Spikes",
+            path: "Sources/Spikes",
+            swiftSettings: [
+                // Same setup as Calibrate: shipping files via symlinks, Swift 5 mode.
+                .swiftLanguageMode(.v5),
+                .unsafeFlags([
+                    "-plugin-path",
+                    "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins"
+                ])
+            ]
+        ),
+        .executableTarget(
             name: "ExportCalendar",
             path: "Sources/ExportCalendar"
         )
