@@ -14,7 +14,7 @@ struct OnboardingContainerView: View {
 
     // EventStore backed by Persistence.shared.container — same store as ContentView.
     // The task saved here will be visible on HomeView immediately after onboarding ends.
-    @StateObject private var store = EventStore()
+    @ObservedObject private var store = AppServices.shared.store
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -36,6 +36,9 @@ struct OnboardingContainerView: View {
                     .tag(4)
 
                 OnboardingCalendarScreen(currentPage: $currentPage)
+                    // It reads the calendar manager from the environment, which
+                    // nothing provided before.
+                    .environmentObject(AppServices.shared.calendarManager)
                     .tag(5)
 
                 OnboardingScreen6(onComplete: {

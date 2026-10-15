@@ -2,68 +2,66 @@
 //  BackgroundRefresh.swift
 //  Olana
 //
-//  DEBUG only, for now. The `com.olana.refresh` BGAppRefreshTask in the order
-//  PRD v6 §3.2 sets, each step useful if the run is cut off after it:
+//  The `com.olana.refresh` background run, in PRD v6 §3.2's order. Alerts
+//  before AI, and each step is useful if the run is cut off after it:
 //
-//    0  if !isProtectedDataAvailable → reschedule, exit            ← S3 measures this
-//    1  Sync                                                        M1-A
-//    2  Plan alerts from known facts; integrity check               M1-A
+//    0  Not unlocked since restart → request the next run, exit
+//    1  Sync: EventKit, then Google if its token is readable        (≤ 10 s)
+//    2  Plan alerts from known facts and cached judgments; integrity check
 //    3  ETA refresh                                                 M1-C
-//    4  Replan                                                      M1-A
-//    5  Model: up to 3 jobs, stop on rateLimited or < 8 s left      ← S1 measures the budget
-//    6  Replan if step 5 produced anything                          M1-A
+//    4  Replan after the ETA refresh                                M1-C
+//    5  Model: up to 3 jobs, stop on rateLimited or < 8 s left      (M1-A: EventSemantics backfill)
+//    6  Replan if step 5 produced anything
 //
-//  For S1 step 5 deliberately keeps calling past 3 jobs, until rateLimited or
-//  the time guard, so we learn the real budget. It sends made-up titles with
-//  the shipping EventSemantics prompt and stores nothing, so no event data
-//  changes. M1-A replaces this file with the real run and drops the spike code.
+//  The next run is requested at the end of every run and on every foreground,
+//  no sooner than 30 min (spec v3 §5.4).
+//
+//  Step 0 is not `UIApplication.isProtectedDataAvailable`, which the PRD names:
+//  that is false whenever the phone is locked, which is when most background
+//  runs happen, so the run would almost never do anything. The PRD's intent
+//  (§3.2 storage protection) is "before the first unlock after a reboot,
+//  nothing is readable". FirstUnlock checks exactly that. Nothing before it
+//  may open the store: Persistence deletes and recreates a store it can't open.
 //
 
-#if DEBUG
 import Foundation
 import UIKit
 import BackgroundTasks
-import FoundationModels
-import ActivityKit
 
 enum BackgroundRefresh {
 
     static let identifier = "com.olana.refresh"
 
-    /// Assume the system's ~30 s refresh budget; stop the model step with 8 s
-    /// left (PRD §3.2 step 5).
+    /// The system gives a refresh about 30 s. Model work stops with 8 s left.
     static let assumedBudget: TimeInterval = 30
     static let stopWithLeft: TimeInterval = 8
-
-    /// Toggle for S2's background half, set from the Spikes screen.
-    static var tryLiveActivityInBackground: Bool {
-        get { UserDefaults.standard.bool(forKey: "spikeS2Background") }
-        set { UserDefaults.standard.set(newValue, forKey: "spikeS2Background") }
-    }
+    static let syncBudget: TimeInterval = 10
+    static let modelJobs = 3
 
     private static var observer: NSObjectProtocol?
 
     /// Call from `didFinishLaunching`, before it returns.
     static func register() {
-        let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
             guard let task = task as? BGAppRefreshTask else { return }
             run(task)
         }
-        SpikeLog.write("bg", "registered", ["ok": "\(ok)"])
-        // Request the next run on every foreground (spec §5.4).
         observer = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { _ in schedule(reason: "foreground") }
+        ) { _ in
+            FirstUnlock.writeMarker()
+            schedule(reason: "foreground")
+        }
     }
 
-    /// Earliest begin 30 min (spec §5.4). Submitting again replaces the request.
+    /// Earliest begin 30 min. Submitting again replaces the pending request.
     static func schedule(reason: String) {
         let request = BGAppRefreshTaskRequest(identifier: identifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            SpikeLog.write("bg", "submit failed", ["reason": reason, "error": "\(error)"])
+            log("submit failed", ["reason": reason, "error": "\(error)"])
         }
     }
 
@@ -76,58 +74,102 @@ enum BackgroundRefresh {
 
         let once = CompleteOnce(task)
         let work = Task { @MainActor in
-            await steps(runID: runID, started: started, manual: false)
+            await steps(runID: runID, started: started)
         }
         task.expirationHandler = {
+            // Progress is saved step by step, and each replan is atomic per
+            // event, so a cut-off run never leaves half a plan.
             work.cancel()
-            SpikeLog.write("bg", "expired", ["run": runID,
-                                             "elapsed": String(format: "%.1f", Date().timeIntervalSince(started))])
+            log("expired", ["run": runID, "elapsed": elapsed(started)])
             once.complete(false)
         }
         Task {
-            let completed = await work.value
-            once.complete(completed)
+            let ok = await work.value
+            once.complete(ok)
         }
     }
 
-    /// The same steps, started by hand from the Spikes screen. The simulator
-    /// never runs BGTasks, so this proves the code path; it's tagged manual and
-    /// left out of the S1 numbers.
     @MainActor
-    static func runManually() async {
-        _ = await steps(runID: "manual-" + String(UUID().uuidString.prefix(4)), started: Date(), manual: true)
-    }
+    static func steps(runID: String, started: Date, manual: Bool = false) async -> Bool {
+        log("run start", ["run": runID, "manual": "\(manual)",
+                          "protectedData": "\(UIApplication.shared.isProtectedDataAvailable)",
+                          "unlockedSinceBoot": "\(FirstUnlock.hasUnlockedSinceBoot)"])
 
-    @MainActor
-    private static func steps(runID: String, started: Date, manual: Bool = false) async -> Bool {
-        let protected = UIApplication.shared.isProtectedDataAvailable
-        SpikeLog.write("bg", "run start", [
-            "run": runID, "manual": "\(manual)",
-            "protectedData": "\(protected)",
-            "lowPower": "\(ProcessInfo.processInfo.isLowPowerModeEnabled)",
-            "model": "\(SystemLanguageModel.default.availability)",
-        ])
-
-        // Step 0 (S3). Nothing past here may touch SwiftData or the keychain.
-        guard protected else {
-            SpikeLog.write("s3", "exit at step 0: locked since reboot", ["run": runID])
+        // 0. Not unlocked since restart: nothing is readable. Pending alerts still fire.
+        guard FirstUnlock.hasUnlockedSinceBoot else {
+            log("exit at step 0: locked since restart", ["run": runID], spike: "s3")
             return true
         }
 
-        // Steps 1 to 4 are M1-A.
-        SpikeLog.write("bg", "steps 1-4 not built (M1-A)", ["run": runID])
+        let services = AppServices.shared
+        let engine = NotificationEngine.shared
 
-        if tryLiveActivityInBackground { await s2Background(runID: runID) }
+        // 1. Sync, capped at 10 s. If it overruns, plan from what's known; the
+        //    sync finishes on its own and its replan picks up the rest.
+        let synced = await within(syncBudget) { await services.calendarManager.performQuickSync() }
+        log("step 1 sync", ["run": runID, "finished": "\(synced)", "elapsed": elapsed(started)])
+        if Task.isCancelled { return false }
 
-        // Step 5 (S1).
-        let result = await s1Budget(runID: runID, started: started)
-        SpikeLog.write("s1", "run end", [
-            "run": runID, "manual": "\(manual)",
-            "ok": "\(result.ok)", "failed": "\(result.failed)",
-            "stop": result.stop,
-            "elapsed": String(format: "%.1f", Date().timeIntervalSince(started)),
-        ])
+        // 2. Plan from known facts and cached judgments. Re-score against the
+        //    clock first, so an event that escalated gets its new profile.
+        for event in services.store.refreshUrgencies() {
+            await engine.refreshAlarm(for: event)
+        }
+        let integrity = await engine.replan("background")
+        log("step 2 plan", ["run": runID, "missing": "\(integrity?.missing ?? -1)",
+                            "added": "\(integrity?.added ?? 0)", "elapsed": elapsed(started)])
+        if Task.isCancelled { return false }
+
+        // 3 and 4 (ETA refresh, replan) arrive with leave-by in M1-C.
+
+        // 5. Model work, bounded: up to 3 jobs, never past 8 s before the end.
+        let deadline = started.addingTimeInterval(assumedBudget - stopWithLeft)
+        let judged = await services.store.backgroundBackfill(limit: modelJobs, deadline: deadline)
+        log("step 5 model", ["run": runID, "judged": "\(judged.count)", "elapsed": elapsed(started)])
+        if Task.isCancelled { return false }
+
+        // 6. Judgments unlock alarms and change reminder profiles.
+        if !judged.isEmpty {
+            for event in judged { await engine.refreshAlarm(for: event) }
+            await engine.replan("background model")
+        }
+
+        #if DEBUG
+        await debugSpikes(runID: runID, started: started, manual: manual)
+        #endif
+        log("run end", ["run": runID, "elapsed": elapsed(started)])
         return true
+    }
+
+    // MARK: - Helpers
+
+    /// Runs `op`, waiting at most `seconds`. The work isn't cancelled on
+    /// timeout; the caller just stops waiting for it.
+    @MainActor
+    private static func within(_ seconds: TimeInterval, _ op: @escaping @MainActor () async -> Void) async -> Bool {
+        let work = Task { @MainActor in await op() }
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask { await work.value; return true }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+    }
+
+    private static func elapsed(_ since: Date) -> String {
+        String(format: "%.1f", Date().timeIntervalSince(since))
+    }
+
+    static func log(_ event: String, _ fields: [String: String] = [:], spike: String = "bg") {
+        #if DEBUG
+        SpikeLog.write(spike, event, fields)
+        #else
+        print("BackgroundRefresh: \(event) \(fields)")
+        #endif
     }
 
     /// setTaskCompleted must be called exactly once, and both the expiration
@@ -144,95 +186,33 @@ enum BackgroundRefresh {
             task.setTaskCompleted(success: success)
         }
     }
-
-    // MARK: - S1
-
-    /// Made-up titles: the budget question doesn't need real events, and these
-    /// never get written anywhere.
-    static let probeTitles = [
-        "Dentist cleaning", "Quarterly review", "Pick up dry cleaning", "1:1 with Sam",
-        "Flight to Denver", "Rent due", "Team standup", "Parent-teacher conference",
-        "Gym", "Car service appointment", "Submit expense report", "Haircut",
-    ]
-
-    struct S1Result { var ok = 0, failed = 0, stop = "" }
-
-    @MainActor
-    static func s1Budget(runID: String, started: Date) async -> S1Result {
-        var r = S1Result()
-        guard case .available = SystemLanguageModel.default.availability else {
-            r.stop = "model unavailable"
-            return r
-        }
-        let options = GenerationOptions(sampling: .greedy)
-        var i = 0
-        while true {
-            if Task.isCancelled { r.stop = "expired"; break }
-            let left = assumedBudget - Date().timeIntervalSince(started)
-            if left < stopWithLeft { r.stop = "time guard"; break }
-            if i >= 60 { r.stop = "cap 60"; break }
-
-            let title = probeTitles[i % probeTitles.count]
-            let t0 = Date()
-            let session = LanguageModelSession(instructions: EventSemanticsPrompt.instructions)
-            do {
-                _ = try await session.respond(to: EventSemanticsPrompt.prompt(title: title, calendarName: nil),
-                                              generating: EventSemantics.self, options: options)
-                r.ok += 1
-                SpikeLog.write("s1", "call ok", ["run": runID, "i": "\(i)",
-                                                 "secs": String(format: "%.2f", Date().timeIntervalSince(t0))])
-            } catch let error as LanguageModelSession.GenerationError {
-                r.failed += 1
-                let kind: String
-                switch error {
-                case .rateLimited: kind = "rateLimited"
-                case .refusal, .guardrailViolation: kind = "refusal"
-                default: kind = "other"
-                }
-                SpikeLog.write("s1", "call failed", ["run": runID, "i": "\(i)", "kind": kind, "error": "\(error)"])
-                if kind == "rateLimited" { r.stop = "rateLimited"; break }
-            } catch {
-                r.failed += 1
-                SpikeLog.write("s1", "call failed", ["run": runID, "i": "\(i)", "kind": "other", "error": "\(error)"])
-            }
-            i += 1
-        }
-        return r
-    }
-
-    // MARK: - S2 (background half)
-
-    @MainActor
-    static func s2Background(runID: String) async {
-        do {
-            _ = try SpikeLiveActivity.requestScheduled(minutesFromNow: 10, label: "background")
-            SpikeLog.write("s2", "background scheduled request ok", ["run": runID])
-        } catch {
-            SpikeLog.write("s2", "background scheduled request failed", ["run": runID, "error": "\(error)"])
-        }
-    }
 }
 
-// MARK: - Scheduled Live Activity (S2)
+// MARK: - Unlocked since restart
 
-enum SpikeLiveActivity {
-    /// iOS 26 scheduled start: `request(…, alertConfiguration:, start:)`.
-    @MainActor
-    static func requestScheduled(minutesFromNow: Double, label: String) throws -> String {
-        let start = Date(timeIntervalSinceNow: minutesFromNow * 60)
-        let eventStart = start.addingTimeInterval(15 * 60)
-        let attributes = OlanaEventAttributes(eventId: "spike-s2-\(UUID().uuidString)",
-                                              eventTitle: "S2 test (\(label))", urgencyRaw: 2)
-        let state = OlanaEventAttributes.ContentState(eventStart: eventStart, minutesRemaining: 15, status: "upcoming")
-        let activity = try Activity<OlanaEventAttributes>.request(
-            attributes: attributes,
-            content: ActivityContent(state: state, staleDate: eventStart.addingTimeInterval(300)),
-            pushType: nil,
-            style: .standard,
-            alertConfiguration: AlertConfiguration(title: "S2 test", body: "Scheduled Live Activity started", sound: .default),
-            start: start
-        )
-        return activity.id
+/// Whether files protected until first unlock are readable, which is what
+/// "unlocked since restart" means for the store, caches and keychain.
+enum FirstUnlock {
+
+    private static var marker: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("olana_first_unlock.marker")
+    }
+
+    /// Written from the foreground, where it's always readable.
+    static func writeMarker() {
+        guard !FileManager.default.fileExists(atPath: marker.path) else { return }
+        try? FileManager.default.createDirectory(at: marker.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try? Data("1".utf8).write(to: marker, options: .completeFileProtectionUntilFirstUserAuthentication)
+    }
+
+    static var hasUnlockedSinceBoot: Bool {
+        // No marker yet (first launch was in the background): fall back to the
+        // stricter check, which is never wrong in the unsafe direction.
+        guard FileManager.default.fileExists(atPath: marker.path) else {
+            return UIApplication.shared.isProtectedDataAvailable
+        }
+        return (try? Data(contentsOf: marker)) != nil
     }
 }
-#endif

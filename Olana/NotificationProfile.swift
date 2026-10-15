@@ -853,6 +853,14 @@ class NotificationEngine: ObservableObject {
 
     // MARK: - AlarmKit gate
 
+    /// Rebuild one event's alarm after its urgency or judgment changed, without
+    /// touching its reminders (the replan owns those) or its Live Activity
+    /// (which can't be started from the background).
+    func refreshAlarm(for event: OlanaEvent) async {
+        await AlarmKitManager.shared.cancelAlarm(for: event.id)
+        await scheduleAlarmIfEarned(for: event)
+    }
+
     /// Decide whether an event has earned the right to interrupt, and when.
     ///
     /// Three rules, all of which must hold:

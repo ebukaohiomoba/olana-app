@@ -24,8 +24,6 @@ final class EventStore: ObservableObject {
         self.context = ModelContext(container)
         load()
         setupNotificationActionObservers()
-        // The alert planner sees every event at once (PRD §3.9).
-        NotificationEngine.shared.eventsProvider = { [weak self] in self?.events }
     }
 
     deinit {
@@ -117,6 +115,20 @@ final class EventStore: ObservableObject {
     }
 
     // MARK: - Semantics backfill
+
+    /// The background run's model step (PRD §3.2 step 5): a few jobs, stopping
+    /// at the deadline or when the model says it's rate-limited. Returns the
+    /// events it judged; the caller replans.
+    func backgroundBackfill(limit: Int, deadline: Date) async -> [OlanaEvent] {
+        UrgencyManager.shared.refresh()
+        let judged = await UrgencyManager.shared.backfill(events: events, context: context,
+                                                          limit: limit, deadline: deadline)
+        if !judged.isEmpty {
+            _ = refreshUrgencies()
+            rebuildHomeDisplayEvents()
+        }
+        return judged
+    }
 
     /// Extract semantics for upcoming events that do not have them, then re-rank.
     ///

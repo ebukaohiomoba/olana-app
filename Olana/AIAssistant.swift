@@ -128,10 +128,23 @@ final class AIAssistant: ObservableObject {
         title: String,
         calendarName: String? = nil
     ) async -> EventSemantics? {
-        guard case .available = SystemLanguageModel.default.availability else { return nil }
+        if case .judged(let s) = await extract(title: title, calendarName: calendarName) { return s }
+        return nil
+    }
+
+    enum Extraction: Sendable {
+        case judged(EventSemantics)
+        /// The system's model budget ran out (common in the background). Not
+        /// the event's fault: it must not count toward giving up on it.
+        case rateLimited
+        case failed
+    }
+
+    nonisolated func extract(title: String, calendarName: String? = nil) async -> Extraction {
+        guard case .available = SystemLanguageModel.default.availability else { return .failed }
 
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard !trimmed.isEmpty else { return .failed }
 
         let prompt = EventSemanticsPrompt.prompt(title: trimmed, calendarName: calendarName)
         // Greedy sampling makes this deterministic. Verified at 100% field agreement
@@ -149,16 +162,17 @@ final class AIAssistant: ObservableObject {
         for attempt in 0..<2 {
             let session = LanguageModelSession(instructions: EventSemanticsPrompt.instructions)
             do {
-                return try await session.respond(
+                return .judged(try await session.respond(
                     to: retryPrompt, generating: EventSemantics.self, options: options
-                ).content
+                ).content)
             } catch {
-                guard attempt == 0 else { return nil }
+                if case .rateLimited? = error as? LanguageModelSession.GenerationError { return .rateLimited }
+                guard attempt == 0 else { return .failed }
                 // The safety filter surfaces as .refusal ("May contain sensitive content"),
                 // measured on macOS 26; .guardrailViolation is matched too in case that changes.
                 if Self.isSafetyBlock(error) {
                     guard let label = EventSemanticsPrompt.retryCalendarLabel(after: calendarName) else {
-                        return nil
+                        return .failed
                     }
                     retryPrompt = EventSemanticsPrompt.prompt(title: trimmed, calendarName: label)
                 } else {
@@ -167,7 +181,7 @@ final class AIAssistant: ObservableObject {
                 }
             }
         }
-        return nil
+        return .failed
     }
 
     /// True when the system safety filter blocked the request rather than the
@@ -203,10 +217,13 @@ final class AIAssistant: ObservableObject {
         guard !EventSemantics.isLowInformation(title: title) else { return .placeholder }
         guard case .available = SystemLanguageModel.default.availability else { return .unavailable }
 
-        if let s = await extractSemantics(title: title, calendarName: calendarName) {
-            return .judged(s)
+        switch await extract(title: title, calendarName: calendarName) {
+        case .judged(let s): return .judged(s)
+        // Treated like the model being unavailable: nothing is recorded against
+        // the event, and backfill stops asking for this run.
+        case .rateLimited:   return .unavailable
+        case .failed:        return .failed
         }
-        return .failed
     }
 
     /// Short, user-facing reason Olu cannot suggest urgency, or nil when it can.

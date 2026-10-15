@@ -2,8 +2,11 @@
 //  KeychainHelper.swift
 //  Olana
 //
-//  Generic Keychain wrapper used by TokenManager for secure OAuth token storage.
-//  Phase 2 (v1.1) — not yet connected to any live code path.
+//  Generic Keychain wrapper for the Google OAuth tokens (GoogleOAuthManager).
+//
+//  Items are readable after the first unlock since restart (PRD v6 §3.2), so
+//  the background run can sync Google while the phone is locked. The iOS
+//  default, when-unlocked, made every locked background sync skip Google.
 //
 
 import Foundation
@@ -15,16 +18,24 @@ enum KeychainHelper {
 
     @discardableResult
     static func save(_ data: Data, service: String, account: String) -> OSStatus {
-        let query: [CFString: Any] = [
-            kSecClass:            kSecClassGenericPassword,
-            kSecAttrService:      service,
-            kSecAttrAccount:      account,
-            kSecValueData:        data,
-            kSecAttrSynchronizable: kCFBooleanTrue!   // iCloud Keychain sync
+        delete(service: service, account: account)   // remove old entry if present
+        let item: [CFString: Any] = [
+            kSecClass:              kSecClassGenericPassword,
+            kSecAttrService:        service,
+            kSecAttrAccount:        account,
+            kSecValueData:          data,
+            kSecAttrSynchronizable: kCFBooleanTrue!,   // iCloud Keychain sync
+            // Not a ThisDeviceOnly class: those can't be synchronizable.
+            kSecAttrAccessible:     kSecAttrAccessibleAfterFirstUnlock
         ]
+        return SecItemAdd(item as CFDictionary, nil)
+    }
 
-        SecItemDelete(query as CFDictionary)   // remove old entry if present
-        return SecItemAdd(query as CFDictionary, nil)
+    /// Re-save an existing item so it picks up the current accessibility.
+    /// Items saved before the change keep their old class until rewritten.
+    static func upgradeAccessibility(service: String, account: String) {
+        guard let data = read(service: service, account: account) else { return }
+        save(data, service: service, account: account)
     }
 
     // MARK: - Read

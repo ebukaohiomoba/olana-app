@@ -248,6 +248,21 @@ final class GoogleOAuthManager: NSObject, ObservableObject,
         }.joined(separator: "&").data(using: .utf8)
     }
 
+    // MARK: - Keychain accessibility
+
+    /// One-time rewrite of tokens saved before they were readable after first
+    /// unlock. Call from the foreground, when the keychain is readable.
+    func upgradeKeychainAccessibility() {
+        let flag = "googleKeychainAfterFirstUnlock_v1"
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+        for account in connectedAccounts {
+            for suffix in ["access", "expiry", "refresh"] {
+                KeychainHelper.upgradeAccessibility(service: keychainService, account: "\(account.id).\(suffix)")
+            }
+        }
+        UserDefaults.standard.set(true, forKey: flag)
+    }
+
     // MARK: - Private: Keychain
 
     private func persistTokens(access: String, expiry: Date, refresh: String, for id: String) {

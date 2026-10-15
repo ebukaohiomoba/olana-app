@@ -165,7 +165,8 @@ public final class UrgencyManager: ObservableObject {
     /// pending, not unrankable, so they are picked up once the model is ready.
     @discardableResult
     public func backfill(events: [OlanaEvent], context: ModelContext,
-                         limit: Int = 40, horizonDays: Int = 60) async -> [OlanaEvent] {
+                         limit: Int = 40, horizonDays: Int = 60,
+                         deadline: Date? = nil) async -> [OlanaEvent] {
         let now = Date()
         let horizon = now.addingTimeInterval(Double(horizonDays) * 86400)
 
@@ -179,10 +180,13 @@ public final class UrgencyManager: ObservableObject {
 
         var populated: [OlanaEvent] = []
         for event in pending {
+            // The background run stops with 8 s left (PRD §3.2 step 5).
+            if let deadline, Date() >= deadline { break }
             let outcome = await AIAssistant.shared.semantics(
                 title: event.title, calendarName: event.calendarName
             )
-            // Became unavailable mid-run (turned off, low power). Stop asking.
+            // Became unavailable mid-run (turned off, low power, or the system's
+            // model budget ran out). Stop asking.
             if case .unavailable = outcome { break }
             if event.record(outcome) != nil { populated.append(event) }
         }

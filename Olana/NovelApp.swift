@@ -22,10 +22,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             NotificationEngine.shared.setupNotificationCategories()
         }
 
-        #if DEBUG
-        // M0 spikes S1 to S3 (spec v3 §2.1). Must register before launch ends.
+        // PRD §3.2 background run. Must register before launch ends.
         BackgroundRefresh.register()
-        #endif
+        if application.applicationState != .background {
+            FirstUnlock.writeMarker()
+            GoogleOAuthManager.shared.upgradeKeychainAccessibility()
+        }
 
         return true
     }

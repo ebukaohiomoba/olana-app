@@ -9,9 +9,10 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var store           = EventStore()
-    @StateObject private var calendarManager = CalendarIntegrationManager()
-    @StateObject private var calendarDataStore = CalendarDataStore()
+    // Shared with the background run (AppServices).
+    @ObservedObject private var store             = AppServices.shared.store
+    @ObservedObject private var calendarManager   = AppServices.shared.calendarManager
+    @ObservedObject private var calendarDataStore = AppServices.shared.calendarDataStore
     @State private var selectedTab: OlanaTab = .home
     @State private var showingAdd = false
 
@@ -65,11 +66,6 @@ struct ContentView: View {
         }
         .onAppear {
             OlanaAnalytics.tabViewed(.home)
-            // Wire calendar manager to its dependencies
-            calendarManager.setup(dataStore: calendarDataStore, eventStore: store)
-        }
-        .onDisappear {
-            calendarManager.teardown()
         }
     }
 }
