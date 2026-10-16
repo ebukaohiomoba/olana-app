@@ -3,7 +3,8 @@
 //  PlannerChecks
 //
 //  AlertPlanner against PRD v6 §3.9 and spec v3 §5.7 (A1, A2, A9), plus the
-//  capacity guarantee. AlertPlanner.swift is a symlink into the app.
+//  capacity guarantee and the execution namespace (spec v3 §5.2).
+//  AlertPlanner.swift and ExecutionAlerts.swift are symlinks into the app.
 //  Run: swift run PlannerChecks
 //
 
@@ -21,7 +22,7 @@ func floor(_ event: UUID, start: Date, before: [Double]) -> [AlertSlot] {
     }
 }
 func exec(_ event: UUID, start: Date, fire: Date, priority: Bool) -> AlertSlot {
-    AlertSlot(id: AlertID.exec(kind: "leave", event: event, planVersion: "v1"), kind: .exec, eventID: event,
+    AlertSlot(id: AlertID.exec(.leave, event: event, planVersion: "v1"), kind: .exec, eventID: event,
               eventStart: start, fireDate: fire, priority: priority,
               title: "E", subtitle: "", body: "Leave now", category: "EXEC", urgencyRaw: 2, index: 0)
 }
@@ -65,13 +66,13 @@ let floorOnly = floor(ev, start: h(3), before: [2, 0.25])
 let e9 = AlertPlanner.diff(desired: [exec(ev, start: h(3), fire: h(2.5), priority: true)],
                            pending: pending(floorOnly), in: AlertID.isExec)
 check("A9 execution diff never removes floor", e9.remove.isEmpty && e9.add.count == 1)
-let f9 = AlertPlanner.diff(desired: floorOnly, pending: pending(floorOnly) + [.init(id: AlertID.exec(kind: "leave", event: ev, planVersion: "v1"), contentKey: "x")],
+let f9 = AlertPlanner.diff(desired: floorOnly, pending: pending(floorOnly) + [.init(id: AlertID.exec(.leave, event: ev, planVersion: "v1"), contentKey: "x")],
                            in: AlertID.isPlannedFloor)
 check("A9 floor diff never removes execution alerts", f9.isEmpty)
 
 // Namespaces don't collide.
 check("ids: floor and exec prefixes are disjoint",
-      !AlertID.isExec(AlertID.floor(ev, 0)) && !AlertID.isPlannedFloor(AlertID.exec(kind: "prep", event: ev, planVersion: "1")))
+      !AlertID.isExec(AlertID.floor(ev, 0)) && !AlertID.isPlannedFloor(AlertID.exec(.prep, event: ev, planVersion: "1")))
 check("ids: snoozes and immediates are never planned floor",
       !AlertID.isPlannedFloor("olana:\(ev.uuidString):snooze:123"))
 
@@ -121,6 +122,63 @@ check("integrity counts what's missing", miss.map(\.id) == [floorOnly[1].id])
 // Past reminders are never planned.
 let past = floor(UUID(), start: h(1), before: [3, 0.5])
 check("past reminders are dropped", AlertPlanner.plan(past, now: now).keep.count == 1)
+
+// Execution namespace (spec v3 §5.2).
+let execID = AlertID.exec(.getReady, event: ev, planVersion: "abc123")
+let parsed = AlertID.parseExec(execID)
+check("exec id round-trips", parsed?.kind == .getReady && parsed?.event == ev && parsed?.planVersion == "abc123")
+check("exec parse rejects floor and malformed ids",
+      AlertID.parseExec(AlertID.floor(ev, 0)) == nil
+        && AlertID.parseExec("olana.exec.teleport.\(ev.uuidString).v1") == nil
+        && AlertID.parseExec("olana.exec.leave.\(ev.uuidString).") == nil)
+check("every exec kind is outside the floor filter, and the floor's snooze/immediate are outside exec",
+      ExecKind.allCases.allSatisfy { !AlertID.isPlannedFloor(AlertID.exec($0, event: ev, planVersion: "1")) }
+        && !AlertID.isExec("olana:\(ev.uuidString):snooze:1") && !AlertID.isExec("olana:\(ev.uuidString):immediate"))
+
+// planVersion: stable for the same inputs, new for any change.
+let base = ExecPlanInputs(start: h(3), end: h(4), leaveBy: h(2.5), getReadyAt: h(2.3), prepStartBy: h(1),
+                          assistMode: "normal", overrideVersions: [1, 2], settingsVersion: 3)
+check("planVersion is stable", base.planVersion == ExecPlanInputs(start: h(3), end: h(4), leaveBy: h(2.5),
+      getReadyAt: h(2.3), prepStartBy: h(1), assistMode: "normal", overrideVersions: [1, 2], settingsVersion: 3).planVersion)
+check("planVersion is 16 hex characters", base.planVersion.count == 16 && base.planVersion.allSatisfy(\.isHexDigit))
+var variants: [ExecPlanInputs] = []
+var v = base; v.start = h(3.1); variants.append(v)
+v = base; v.end = h(5); variants.append(v)
+v = base; v.leaveBy = h(2.4); variants.append(v)
+v = base; v.leaveBy = nil; variants.append(v)
+v = base; v.getReadyAt = nil; variants.append(v)
+v = base; v.prepStartBy = h(0.5); variants.append(v)
+v = base; v.assistMode = "always"; variants.append(v)
+v = base; v.overrideVersions = [1, 3]; variants.append(v)
+v = base; v.overrideVersions = [12]; variants.append(v)
+v = base; v.settingsVersion = 4; variants.append(v)
+check("any input change gives a new planVersion", Set(variants.map(\.planVersion) + [base.planVersion]).count == variants.count + 1)
+
+// A changed plan replaces the stale exec alert and leaves the floor alone.
+func execSlot(_ kind: ExecKind, _ version: String, fire: Date) -> AlertSlot {
+    AlertSlot(id: AlertID.exec(kind, event: ev, planVersion: version), kind: .exec, eventID: ev, eventStart: h(3),
+              fireDate: fire, priority: true, title: "E", subtitle: "", body: "Leave now", category: "EXEC", urgencyRaw: 2, index: 0)
+}
+let oldLeave = execSlot(.leave, "v1", fire: h(2.5)), newLeave = execSlot(.leave, "v2", fire: h(2.4))
+let rv = AlertPlanner.diff(desired: floorOnly + [newLeave], pending: pending(floorOnly + [oldLeave]), in: AlertID.isExec)
+check("new planVersion: stale exec removed, new added, floor untouched",
+      rv.remove == [oldLeave.id] && rv.add.map(\.id) == [newLeave.id])
+check("empty execution plan (M1-A) removes only exec alerts",
+      AlertPlanner.diff(desired: floorOnly, pending: pending(floorOnly + [oldLeave]), in: AlertID.isExec).remove == [oldLeave.id])
+
+// Store: rewritten from the kept plan, persisted, floor ignored.
+let storeURL = FileManager.default.temporaryDirectory.appendingPathComponent("exec_\(UUID().uuidString).json")
+let store = ExecutionAlertStore(url: storeURL)
+let prep = execSlot(.prep, "v2", fire: h(1))
+store.replace(with: floorOnly + [newLeave, prep])
+check("store keeps exec ids per event, soonest first, with planVersion",
+      store.ids(for: ev) == [prep.id, newLeave.id] && store.entries[ev]?.planVersion == "v2" && store.entries.count == 1)
+check("store survives a reload", ExecutionAlertStore(url: storeURL).entries == store.entries)
+store.remove(ev)
+check("store remove (Mark done)", store.ids(for: ev).isEmpty && ExecutionAlertStore(url: storeURL).entries.isEmpty)
+store.replace(with: [newLeave]); store.replace(with: [])
+check("store replace with an empty plan clears it", store.allIDs.isEmpty)
+try? FileManager.default.removeItem(at: storeURL)
 
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

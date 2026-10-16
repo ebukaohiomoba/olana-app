@@ -689,6 +689,11 @@ class NotificationEngine: ObservableObject {
         /// Planned floor reminders still not pending after the replan. The gate is zero.
         let missing: Int
         let missingReason: String?
+        /// Execution alerts (M1-C): planned, and planned but not pending. A
+        /// separate metric from the floor, reported, not gated. Optional so
+        /// history saved before M1-A's execution store still decodes.
+        var execPlanned: Int? = nil
+        var execMissing: Int? = nil
     }
 
     /// Bring pending reminders in line with the plan, then check nothing
@@ -711,6 +716,7 @@ class NotificationEngine: ObservableObject {
         for event in events {
             let p = floorPlan(for: event, now: now)
             slots += p.slots
+            slots += executionPlan(for: event, now: now)
             if p.immediate { immediates.append(event) }
         }
 
@@ -718,8 +724,11 @@ class NotificationEngine: ObservableObject {
         // Snoozes, immediates and debug tests count against iOS's limit too.
         let others = pending.filter { !AlertID.isPlannedFloor($0.identifier) && !AlertID.isExec($0.identifier) }.count
         let plan = AlertPlanner.plan(slots, now: now, limit: max(0, AlertPlanner.pendingLimit - others))
-        let diff = AlertPlanner.diff(desired: plan.keep, pending: pending.map(Self.pendingKey),
-                                     in: AlertID.isPlannedFloor)
+        // Floor and execution are diffed separately, so neither can remove the other's.
+        let keys = pending.map(Self.pendingKey)
+        let floorDiff = AlertPlanner.diff(desired: plan.keep, pending: keys, in: AlertID.isPlannedFloor)
+        let execDiff = AlertPlanner.diff(desired: plan.keep, pending: keys, in: AlertID.isExec)
+        let diff = AlertPlanner.Diff(add: floorDiff.add + execDiff.add, remove: floorDiff.remove + execDiff.remove)
 
         if !diff.remove.isEmpty {
             center.removePendingNotificationRequests(withIdentifiers: diff.remove)
@@ -732,8 +741,9 @@ class NotificationEngine: ObservableObject {
         for event in immediates { await postImmediate(for: event) }
 
         // Records follow the plan, keeping any snoozes the user asked for.
+        ExecutionAlertStore.shared.replace(with: plan.keep)
         var records: [UUID: ScheduledNotificationRecord] = [:]
-        for (eventID, group) in Dictionary(grouping: plan.keep, by: \.eventID) {
+        for (eventID, group) in Dictionary(grouping: plan.keep.filter { $0.kind == .floor }, by: \.eventID) {
             let snoozes = scheduledRecords[eventID]?.notificationIds.filter { !AlertID.isPlannedFloor($0) } ?? []
             records[eventID] = ScheduledNotificationRecord(
                 eventId: eventID, urgency: EventUrgency(rawValue: group[0].urgencyRaw) ?? .low,
@@ -752,6 +762,8 @@ class NotificationEngine: ObservableObject {
         // Integrity: everything planned should now be pending.
         let after = Set(await center.pendingNotificationRequests().map(\.identifier))
         let missing = AlertPlanner.missingFloor(planned: plan.keep, pendingIDs: after, now: Date())
+        let execKept = plan.keep.filter { $0.kind == .exec }
+        let execMissing = execKept.filter { $0.fireDate > Date() && !after.contains($0.id) }.count
         if !plan.overflow.isEmpty {
             print("⚠️ AlertPlanner: \(plan.overflow.count) reminders over capacity (\(plan.overflow.filter { $0.kind == .floor }.count) floor)")
         }
@@ -759,7 +771,14 @@ class NotificationEngine: ObservableObject {
             at: now, reason: reason, planned: plan.keep.count,
             added: diff.add.count, removed: diff.remove.count, overflow: plan.overflow.count,
             missing: missing.count,
-            missingReason: missing.isEmpty ? nil : (addFailure ?? "unknown")))
+            missingReason: missing.isEmpty ? nil : (addFailure ?? "unknown"),
+            execPlanned: execKept.count, execMissing: execMissing))
+    }
+
+    /// Execution alerts an event wants (prep, get-ready, leave, join). Empty
+    /// until M1-C; the namespace, diff and store are in place for it.
+    func executionPlan(for event: OlanaEvent, now: Date) -> [AlertSlot] {
+        []
     }
 
     private static func pendingKey(_ r: UNNotificationRequest) -> AlertPlanner.Pending {
@@ -908,10 +927,13 @@ class NotificationEngine: ObservableObject {
     func cancelNotifications(for eventId: UUID) async {
         let prefix = "\(AlertID.floorPrefix)\(eventId.uuidString):"
         let pending = await center.pendingNotificationRequests().map(\.identifier)
-        let ids = Set(pending.filter { $0.hasPrefix(prefix) } + (scheduledRecords[eventId]?.notificationIds ?? []))
+        let ids = Set(pending.filter { $0.hasPrefix(prefix) || AlertID.parseExec($0)?.event == eventId }
+                      + (scheduledRecords[eventId]?.notificationIds ?? [])
+                      + ExecutionAlertStore.shared.ids(for: eventId))
         center.removePendingNotificationRequests(withIdentifiers: Array(ids))
         scheduledRecords.removeValue(forKey: eventId)
         saveRecords()
+        ExecutionAlertStore.shared.remove(eventId)
         // Not gated on a notification record: an alarm or Live Activity can
         // exist without one, and must not outlive its event.
         await endLiveActivity(for: eventId)
@@ -922,6 +944,7 @@ class NotificationEngine: ObservableObject {
         center.removeAllPendingNotificationRequests()
         scheduledRecords.removeAll()
         saveRecords()
+        ExecutionAlertStore.shared.replace(with: [])
     }
 
     // MARK: - Snooze Reschedule
