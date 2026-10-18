@@ -62,74 +62,28 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 }
 
-// MARK: - Launch View
-
-private struct LaunchView: View {
-    @Environment(\.olanaTheme) private var theme
-    @State private var oluState: OluState = .celebrate
-
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [theme.colors.canvasStart, theme.colors.canvasEnd],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            VStack(spacing: 28) {
-                OluView(state: $oluState, size: 180)
-
-                VStack(spacing: 8) {
-                    Text("Olana")
-                        .font(.system(size: 38, weight: .bold, design: .serif))
-                        .foregroundStyle(theme.colors.ink)
-
-                    Text("Your personal productivity companion")
-                        .font(.subheadline)
-                        .foregroundStyle(theme.colors.slate)
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Main App
 @main
 struct OlanaApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @ThemePreference private var selectedTheme: ThemeVariant
-    @StateObject private var authManager = AuthenticationManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @State private var splashTimerDone = false
+    /// When onboarding finished; the calendar-alerts tip waits a week from it.
+    @AppStorage("olanaOnboardedAt_v1") private var onboardedAt: Double = 0
 
     init() {
+        // Analytics and the Google Calendar client ID. No account: there's no login.
         FirebaseApp.configure()
     }
 
     @ViewBuilder
     private var appRoot: some View {
-        // Splash shows for exactly 3 ms then yields — never gated on
-        // isLoading so a slow/offline Firestore can never keep it stuck.
-        if !splashTimerDone {
-            LaunchView()
-                .onAppear {
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 3_000_000)
-                        splashTimerDone = true
-                    }
-                }
-        } else if authManager.currentUser == nil {
-            LoginView()
-        } else if authManager.isLoading || authManager.appUser == nil {
-            // Firebase user is known but the Firestore profile fetch is still
-            // in-flight (or hasn't started yet). Hold on the splash rather than
-            // flashing UsernameSetupView.
-            LaunchView()
-        } else if authManager.appUser?.username.isEmpty != false {
-            UsernameSetupView()
-        } else if !hasCompletedOnboarding {
-            OnboardingContainerView()
+        if !hasCompletedOnboarding {
+            OnboardingView {
+                onboardedAt = Date().timeIntervalSince1970
+                hasCompletedOnboarding = true
+            }
+            .homePalette()
         } else {
             ContentView()
         }
@@ -148,19 +102,13 @@ struct OlanaApp: App {
                 appRoot
                 #endif
             }
-            .environmentObject(authManager)
             .olanaThemeProvider(variant: selectedTheme)
             .onAppear {
                 #if DEBUG
                 if HomeFixtures.requested != nil { return }
                 #endif
-                Task { @MainActor in
-                    if NotificationEngine.shared.authorizationStatus == .notDetermined {
-                        _ = await NotificationEngine.shared.requestAuthorization()
-                    } else {
-                        await NotificationEngine.shared.checkAuthorizationStatus()
-                    }
-                }
+                // Asked on home after first value (PRD §1.11 step 5), not at launch.
+                Task { @MainActor in await NotificationEngine.shared.checkAuthorizationStatus() }
             }
         }
         .modelContainer(Persistence.shared.container)

@@ -316,11 +316,8 @@ final class EventStore: ObservableObject {
         )
     }
     
-    // ✅ Toggle completion with proper return type
-    func toggleEventCompletion(_ id: UUID) -> (xp: Int, rewards: [String], newBadges: [Badge])? {
-        guard let event = events.first(where: { $0.id == id }) else {
-            return nil
-        }
+    func toggleEventCompletion(_ id: UUID) {
+        guard let event = events.first(where: { $0.id == id }) else { return }
         
         if event.completed {
             // Uncomplete - just toggle back
@@ -331,25 +328,14 @@ final class EventStore: ObservableObject {
             // Undoing Mark done brings its reminders back.
             Task { await NotificationEngine.shared.scheduleNotifications(for: event) }
             OlanaAnalytics.eventUncompleted(urgency: urgency)
-            return nil
         } else {
-            // Complete - mark and award XP
             let urgency    = event.urgency
             let isRecurring = event.recurrenceRule != .none
             event.completed = true
             event.completedAt = Date()
-
-            let result = XPManager.shared.completeEvent(event)
-
             saveAndRefresh()
             Task { await NotificationEngine.shared.cancelNotifications(for: id) }
-            OlanaAnalytics.eventCompleted(
-                urgency:    urgency,
-                xpEarned:   result.xp,
-                streakDays: XPManager.shared.streakDays,
-                isRecurring: isRecurring
-            )
-            return (xp: result.xp, rewards: result.rewards, newBadges: result.newBadges)
+            OlanaAnalytics.eventCompleted(urgency: urgency, isRecurring: isRecurring)
         }
     }
 
@@ -538,7 +524,7 @@ final class EventStore: ObservableObject {
             guard let eventId = notification.userInfo?["eventId"] as? UUID else { return }
             Task { @MainActor [weak self] in
                 // Discard the celebration tuple — user isn't in the app to see it
-                _ = self?.toggleEventCompletion(eventId)
+                self?.toggleEventCompletion(eventId)
             }
         }
 

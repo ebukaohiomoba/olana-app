@@ -570,3 +570,39 @@ extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
     var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
 }
+
+// MARK: - Just-in-time asks (PRD v3 §1.11 steps 5 and 6)
+
+/// What home asks once, and when. Notifications come right after first value,
+/// with the user's own next event as the example; the calendar-alerts tip
+/// comes once, a week after onboarding. One at a time, notifications first.
+enum JustInTimeAsk: Equatable {
+    case notifications(eventTitle: String?)
+    case calendarBackupTip
+
+    static let tipAfter: TimeInterval = 7 * 24 * 3600
+
+    static func next(notificationsUndetermined: Bool, notificationsAsked: Bool, nextEventTitle: String?,
+                     onboardedAt: Date?, tipShown: Bool, now: Date) -> JustInTimeAsk? {
+        if notificationsUndetermined && !notificationsAsked { return .notifications(eventTitle: nextEventTitle) }
+        if !tipShown, let onboardedAt, now.timeIntervalSince(onboardedAt) >= tipAfter { return .calendarBackupTip }
+        return nil
+    }
+
+    var title: String {
+        switch self {
+        case .notifications(let t?): return "Want a heads-up before \(t)?"
+        case .notifications(nil): return "Want a heads-up before what matters?"
+        case .calendarBackupTip: return "Keep your calendar's own alerts on"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .notifications:
+            return "Olana reminds you before your events, earlier for the ones that need prep."
+        case .calendarBackupTip:
+            return "Olana only knows about events once it has synced them. Your calendar's own alerts cover anything added on another device in the meantime."
+        }
+    }
+}

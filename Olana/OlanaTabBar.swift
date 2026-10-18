@@ -2,7 +2,7 @@
 //  OlanaTabBar.swift
 //  Olana
 //
-//  Home, Calendar, Circles, Settings, and Add as the separate trailing glass
+//  Home, Calendar, Settings, and Add as the separate trailing glass
 //  button. This is the system iOS 26 tab bar, so Liquid Glass, the drag lens,
 //  the scroll edge effect and accessibility all come from iOS. Add uses the
 //  prominent tab role (iOS 27; search on iOS 26) only for its place and
@@ -13,7 +13,7 @@
 import SwiftUI
 
 enum OlanaTab: Int, CaseIterable {
-    case home, calendar, circles, settings
+    case home, calendar, settings
     /// Not a screen: opens the add sheet.
     case add
 
@@ -21,7 +21,6 @@ enum OlanaTab: Int, CaseIterable {
         switch self {
         case .home:     return "Home"
         case .calendar: return "Calendar"
-        case .circles:  return "Circles"
         case .settings: return "Settings"
         case .add:      return "Add event"
         }
@@ -31,19 +30,17 @@ enum OlanaTab: Int, CaseIterable {
         switch self {
         case .home:     return "house"
         case .calendar: return "calendar"
-        case .circles:  return "person.3"
         case .settings: return "gearshape"
         case .add:      return "plus"
         }
     }
 }
 
-struct OlanaTabView<Home: View, Calendar: View, Circles: View, Settings: View>: View {
+struct OlanaTabView<Home: View, Calendar: View, Settings: View>: View {
     @Binding var selection: OlanaTab
     var onAdd: () -> Void
     @ViewBuilder var home: () -> Home
     @ViewBuilder var calendar: () -> Calendar
-    @ViewBuilder var circles: () -> Circles
     @ViewBuilder var settings: () -> Settings
 
     @Environment(\.homePalette) private var c
@@ -59,7 +56,6 @@ struct OlanaTabView<Home: View, Calendar: View, Circles: View, Settings: View>: 
         })) {
             Tab(OlanaTab.home.title, systemImage: OlanaTab.home.symbol, value: OlanaTab.home) { home() }
             Tab(OlanaTab.calendar.title, systemImage: OlanaTab.calendar.symbol, value: OlanaTab.calendar) { calendar() }
-            Tab(OlanaTab.circles.title, systemImage: OlanaTab.circles.symbol, value: OlanaTab.circles) { circles() }
             Tab(OlanaTab.settings.title, systemImage: OlanaTab.settings.symbol, value: OlanaTab.settings) { settings() }
             Tab(OlanaTab.add.title, systemImage: OlanaTab.add.symbol, value: OlanaTab.add, role: Self.addRole) { Color.clear }
         }

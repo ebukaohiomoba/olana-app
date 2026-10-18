@@ -977,6 +977,15 @@ class NotificationEngine: ObservableObject {
         guard let plan = UrgencyCombiner.alarmPlan(semantics: semantics, start: event.start, prepStartBy: startBy)
         else { return }
 
+        // AlarmKit is asked just in time, at the first alarm-tier event, and
+        // only for Plus or preview users (PRD v6 §1.11). Only in the foreground:
+        // a permission prompt can't show from a background run.
+        if AlarmKitManager.shared.authorizationState == .notDetermined {
+            guard plan.tier == .alarm, PlusAccess.hasPlus,
+                  UIApplication.shared.applicationState == .active else { return }
+            await AlarmKitManager.shared.requestAuthorization()
+        }
+
         let allowed: Bool
         switch plan.tier {
         case .alarm:         allowed = settings.urgentAlarmsEnabled

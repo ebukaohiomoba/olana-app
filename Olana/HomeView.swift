@@ -10,9 +10,12 @@
 //  Everything the screen says comes from HomeDayBuilder, which is pure. This
 //  view snapshots the store into HomeDayBuilder.Input once a minute and draws.
 //
-//  M1-B removed from home: greeting, Olu, the progress card (XP, streak, grace
-//  tokens), the imminent card, the day strip and navigator, the event list and
-//  the floating add button (now Add in the tab bar). Their data stays.
+//  M1-B removed from home: greeting, Olu, the progress card, the imminent
+//  card, the day strip and navigator, the event list and the floating add
+//  button (now Add in the tab bar). XP, streaks and friends are gone entirely.
+//
+//  Also asks, just in time (PRD v3 §1.11): notifications after first value,
+//  and the calendar-alerts tip a week after onboarding.
 //
 
 import SwiftUI
@@ -36,6 +39,12 @@ struct HomeView: View {
     @State private var placeChoice: (event: OlanaEvent, options: [ResolvedPlace])?
     @State private var placeNotFound = false
     @State private var showGettingThere = false
+    // Just-in-time asks (PRD §1.11): notifications after first value, the
+    // calendar-alerts tip after a week.
+    @State private var jitAsk: JustInTimeAsk?
+    @AppStorage("olanaNotifAsked_v1") private var notifAsked = false
+    @AppStorage("olanaBackupTipShown_v1") private var backupTipShown = false
+    @AppStorage("olanaOnboardedAt_v1") private var onboardedAt: Double = 0
 
     // Delete confirmation for recurring events
     @State private var pendingDeleteID: UUID?
@@ -79,6 +88,7 @@ struct HomeView: View {
                     await store.backfillSemantics()
                     // Integrity check on every foreground (PRD v3 §3.10).
                     NotificationEngine.shared.requestReplan("foreground")
+                    await askJustInTime()
                 }
                 let events = store.events
                 Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
@@ -121,6 +131,25 @@ struct HomeView: View {
                 @unknown default:
                     break
                 }
+            }
+            .alert(jitAsk?.title ?? "", isPresented: Binding(get: { jitAsk != nil }, set: { if !$0 { jitAsk = nil } }),
+                   presenting: jitAsk) { ask in
+                switch ask {
+                case .notifications:
+                    Button("Yes") {
+                        notifAsked = true
+                        Task {
+                            if await NotificationEngine.shared.requestAuthorization() {
+                                NotificationEngine.shared.requestReplan("notifications allowed")
+                            }
+                        }
+                    }
+                    Button("Not now", role: .cancel) { notifAsked = true }
+                case .calendarBackupTip:
+                    Button("OK") { backupTipShown = true }
+                }
+            } message: { ask in
+                Text(ask.message)
             }
             .confirmationDialog("Which one?", isPresented: Binding(get: { placeChoice != nil },
                                                                    set: { if !$0 { placeChoice = nil } }), titleVisibility: .visible) {
@@ -240,6 +269,22 @@ struct HomeView: View {
             travelNotNeeded: ov.travelNotNeeded,
             needsOrigin: trip.needsTravel && !trip.planTravel && !ExecPreferences.hasSavedOrigin && !ExecPreferences.originAsked)
         return i
+    }
+
+    // MARK: - Just in time (PRD v3 §1.11)
+
+    private func askJustInTime() async {
+        // Users from before this build start their week now.
+        if onboardedAt == 0 { onboardedAt = Date().timeIntervalSince1970 }
+        // Let home show first: the ask follows first value.
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        guard isViewVisible, jitAsk == nil else { return }
+        await NotificationEngine.shared.checkAuthorizationStatus()
+        let now = Date()
+        jitAsk = JustInTimeAsk.next(
+            notificationsUndetermined: NotificationEngine.shared.authorizationStatus == .notDetermined,
+            notificationsAsked: notifAsked, nextEventTitle: buildDay(now: now).card?.title,
+            onboardedAt: Date(timeIntervalSince1970: onboardedAt), tipShown: backupTipShown, now: now)
     }
 
     // MARK: - Card actions (spec v3 §14.8)
@@ -383,7 +428,7 @@ struct HomeView: View {
 
     private func toggleDone(_ id: UUID) {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
-        _ = store.toggleEventCompletion(id)
+        store.toggleEventCompletion(id)
     }
 
     private func handleDeleteIntent(id: UUID, isRecurring: Bool) {

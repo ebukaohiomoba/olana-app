@@ -131,6 +131,9 @@ struct HomeFixtureScreen: View {
                         .presentationDetents([.large])
                 }
                 .onAppear { PlusAccess.setDebug(which == "sheet") }
+        } else if which == "onboarding" || which == "onboarding-calendar" {
+            // `-homeFixture onboarding` (promise) or `onboarding-calendar`.
+            OnboardingView(start: which == "onboarding" ? .promise : .calendar) {}.homePalette()
         } else if which.hasPrefix("spikes-") {
             // `-spikes open` or `-spikes autorun`: the Spikes screen, no login.
             NavigationStack { SpikesView(autorun: which == "spikes-autorun") }
@@ -158,7 +161,7 @@ struct HomeFixtureScreen: View {
         var body: some View {
             OlanaTabView(selection: $tab, onAdd: {}) {
                 content
-            } calendar: { c.bg } circles: { c.bg } settings: { c.bg }
+            } calendar: { c.bg } settings: { c.bg }
         }
 
         private var content: some View {

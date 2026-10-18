@@ -251,5 +251,21 @@ expect("question: not beyond 24 h, not for minor, and the place question comes f
        q(start: at(15, 0, day: 2), place: true, origin: true) == nil && q(assisted: false, place: true, origin: true) == nil
          && q(origin: true) == .whereIsThis && q(asks: true, place: true, origin: true) == .inPersonOrOnline)
 
+// Just-in-time asks (PRD v3 §1.11 steps 5 and 6).
+func jit(undetermined: Bool = true, asked: Bool = false, title: String? = "Client review", onboarded: Date? = at(9, 0),
+         tip: Bool = false, now: Date = at(11, 0)) -> JustInTimeAsk? {
+    JustInTimeAsk.next(notificationsUndetermined: undetermined, notificationsAsked: asked, nextEventTitle: title,
+                       onboardedAt: onboarded, tipShown: tip, now: now)
+}
+expect("jit: notifications first, with the user's own next event", jit() == .notifications(eventTitle: "Client review")
+       && jit()?.title == "Want a heads-up before Client review?")
+expect("jit: no next event still asks, without a name", jit(title: nil)?.title == "Want a heads-up before what matters?")
+expect("jit: asked once; not again after Yes or Not now, nor once decided", jit(asked: true) == nil && jit(undetermined: false) == nil)
+expect("jit: the calendar-alerts tip a week after onboarding, once",
+       jit(undetermined: false, now: at(9, 0, day: 7)) == .calendarBackupTip
+         && jit(undetermined: false, now: at(8, 59, day: 7)) == nil
+         && jit(undetermined: false, tip: true, now: at(9, 0, day: 8)) == nil)
+expect("jit: one at a time, notifications before the tip", jit(now: at(9, 0, day: 8)) == .notifications(eventTitle: "Client review"))
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

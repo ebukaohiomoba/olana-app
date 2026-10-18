@@ -26,11 +26,9 @@ enum OlanaAnalytics {
     }
 
     /// User marked an event as complete.
-    static func eventCompleted(urgency: EventUrgency, xpEarned: Int, streakDays: Int, isRecurring: Bool) {
+    static func eventCompleted(urgency: EventUrgency, isRecurring: Bool) {
         Analytics.logEvent("event_completed", parameters: [
             "urgency":      urgency.analyticsName,
-            "xp_earned":    xpEarned,
-            "streak_days":  streakDays,
             "is_recurring": isRecurring ? "true" : "false"
         ])
     }
@@ -90,12 +88,11 @@ enum OlanaAnalytics {
     // MARK: - Supporting types
 
     enum AppTab {
-        case home, calendar, friends, settings
+        case home, calendar, settings
         var analyticsName: String {
             switch self {
             case .home:     return "home"
             case .calendar: return "calendar"
-            case .friends:  return "friends"
             case .settings: return "settings"
             }
         }

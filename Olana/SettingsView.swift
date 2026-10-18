@@ -10,12 +10,10 @@
 import SwiftUI
 import UserNotifications
 import ActivityKit
-import FirebaseAuth
 
 struct SettingsView: View {
     @Environment(\.olanaTheme) private var theme
     @Environment(\.scenePhase) private var scenePhase
-    @EnvironmentObject private var authManager: AuthenticationManager
     @ThemePreference private var themeVariant: ThemeVariant
     @AppStorage("literaryFlavor") private var literaryFlavor: Bool = true
     @State private var isViewVisible = false
@@ -63,15 +61,6 @@ struct SettingsView: View {
                 
                 ScrollView {
                     VStack(spacing: 24) {
-                        // Profile Card
-                        ProfileCard(
-                            displayName: authManager.appUser?.displayName ?? authManager.currentUser?.displayName ?? "—",
-                            email: authManager.appUser?.email ?? authManager.currentUser?.email ?? "—",
-                            profileEmoji: authManager.appUser?.profileEmoji ?? "👤"
-                        )
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                        
                         // MARK: - General Settings
                         SettingsSection(title: "General Settings") {
                             // Notifications Navigation
@@ -92,30 +81,6 @@ struct SettingsView: View {
                                 icon: "globe",
                                 iconColor: theme.colors.ribbon,
                                 title: "Language",
-                                action: {}
-                            )
-                        }
-                        
-                        // MARK: - Account & Security
-                        SettingsSection(title: "Account & Security") {
-                            SettingsNavigationRow(
-                                icon: "envelope.fill",
-                                iconColor: .cyan,
-                                title: "Change Email",
-                                action: {}
-                            )
-                            
-                            SettingsNavigationRow(
-                                icon: "lock.fill",
-                                iconColor: theme.colors.ribbon,
-                                title: "Change Password",
-                                action: {}
-                            )
-                            
-                            SettingsNavigationRow(
-                                icon: "shield.fill",
-                                iconColor: .blue,
-                                title: "Privacy Settings",
                                 action: {}
                             )
                         }
@@ -197,28 +162,6 @@ struct SettingsView: View {
                             )
                         }
                         
-                        // Log Out Button
-                        Button {
-                            try? authManager.signOut()
-                        } label: {
-                            Text("Log Out")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(
-                                    LinearGradient(
-                                        colors: [Color.red.opacity(0.8), Color.red],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .shadow(color: Color.red.opacity(0.4), radius: 12, x: 0, y: 6)
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-
                         #if DEBUG
                         SettingsSection(title: "Developer") {
                             Menu {
@@ -1131,44 +1074,6 @@ private struct QuietHoursPickerSheet: View {
 }
 
 // MARK: - Profile Card
-private struct ProfileCard: View {
-    @Environment(\.olanaTheme) private var theme
-    let displayName: String
-    let email: String
-    let profileEmoji: String
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Text(profileEmoji)
-                .font(.system(size: 60))
-                .frame(width: 100, height: 100)
-                .glassEffect(.regular.tint(theme.colors.ribbon.opacity(0.1)), in: .circle)
-                .overlay(
-                    Circle()
-                        .stroke(theme.colors.cardBorder, lineWidth: 2)
-                )
-                .shadow(color: theme.colors.pillShadow.opacity(0.2), radius: 16, x: 0, y: 8)
-
-            VStack(spacing: 6) {
-                Text(displayName)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(theme.colors.ink)
-
-                Text(email)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-        .glassEffect(.regular.tint(theme.colors.paper.opacity(0.6)), in: .rect(cornerRadius: 26))
-        .overlay(
-            RoundedRectangle(cornerRadius: 26)
-                .stroke(theme.colors.cardBorder, lineWidth: 1)
-        )
-        .shadow(color: theme.colors.pillShadow.opacity(0.2), radius: 24, x: 0, y: 12)
-    }
-}
 
 // MARK: - Settings Section (Unchanged)
 /// Settings › Privacy (PRD v3 §3.16). Telemetry withdrawal arrives with beta telemetry.
@@ -1390,7 +1295,6 @@ private struct AlarmKitSettingCard: View {
 
 #Preview {
     SettingsView()
-        .environmentObject(AuthenticationManager())
         .environmentObject(CalendarIntegrationManager())
         .environmentObject(CalendarDataStore())
 }

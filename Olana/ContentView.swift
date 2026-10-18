@@ -21,7 +21,7 @@ struct ContentView: View {
     @AppStorage("olanaGateSeen_v1") private var gateSeen = ""
 
     private let tabMap: [OlanaTab: OlanaAnalytics.AppTab] = [
-        .home: .home, .calendar: .calendar, .circles: .friends, .settings: .settings
+        .home: .home, .calendar: .calendar, .settings: .settings
     ]
 
     var body: some View {
@@ -34,8 +34,6 @@ struct ContentView: View {
             CalendarView()
                 .environmentObject(store)
                 .environmentObject(calendarManager)
-        } circles: {
-            FriendsView()
         } settings: {
             SettingsView()
                 .environmentObject(store)
