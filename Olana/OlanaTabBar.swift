@@ -35,17 +35,17 @@ struct OlanaTabBar: View {
     var onAdd: () -> Void
 
     @Environment(\.homePalette) private var c
-    @Environment(\.colorScheme) private var scheme
 
     /// Bar height including the bump; the plus sits in the bump.
     static let height: CGFloat = 82
 
     var body: some View {
         ZStack(alignment: .top) {
-            TabBarShape()
-                .fill(scheme == .dark ? c.card2.opacity(0.96) : c.card)
-                .overlay(TabBarShape().stroke(c.line, lineWidth: 1))
-                .shadow(color: scheme == .dark ? .clear : Color(hex: "503C1E").opacity(0.12), radius: 12, y: 6)
+            // Liquid Glass in the bar's own shape, bump included. The system
+            // handles Reduce Transparency and light/dark, and draws its own
+            // edge, so the old fill, hairline and shadow are gone.
+            Color.clear
+                .glassEffect(.regular, in: TabBarShape())
 
             HStack(alignment: .bottom, spacing: 0) {
                 item(.home)
