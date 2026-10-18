@@ -18,6 +18,8 @@ struct SpikesView: View {
     @State private var s2Status = ""
     @State private var bgLiveActivity = BackgroundRefresh.tryLiveActivityInBackground
     @State private var confirmClear = false
+    @State private var integrity = IntegritySummary()
+    @State private var lastCheck: NotificationEngine.IntegrityResult?
     var autorun = false
 
     var body: some View {
@@ -80,6 +82,27 @@ struct SpikesView: View {
                 Text("Uses your real upcoming events. Results stay in the log on this phone.")
             }
 
+            Section {
+                row("Gate", integrity.gatePassed(now: Date()) ? "Passed" : "Not yet")
+                row("Clean run since", integrity.cleanSince?.formatted(date: .abbreviated, time: .shortened) ?? "–")
+                row("Checks", "\(integrity.checks)" + (integrity.since.map { " since \($0.formatted(date: .abbreviated, time: .omitted))" } ?? ""))
+                row("Checks with floor missing", "\(integrity.missingChecks)")
+                if let at = integrity.lastMissingAt {
+                    row("Last miss", "\(at.formatted(date: .abbreviated, time: .shortened)) · \(integrity.lastMissingReason ?? "unknown")")
+                }
+                row("Checks with notifications off", "\(integrity.notAuthorizedChecks)")
+                row("Execution alerts missing (reported)", "\(integrity.execMissingChecks) checks")
+                row("Delivery observed", integrity.deliveryDue == 0 ? "–"
+                    : "\(integrity.deliveryObserved)/\(integrity.deliveryDue) (\(pct(integrity.deliveryObserved, integrity.deliveryDue)))")
+                if let r = lastCheck {
+                    row("Last check", "\(r.at.formatted(date: .omitted, time: .shortened)) · \(r.reason) · \(r.planned) planned, \(r.missing) missing")
+                }
+            } header: {
+                Text("M1-A · Floor integrity")
+            } footer: {
+                Text("The gate is a week of checks with zero floor reminders missing and notifications on. A check with notifications off restarts the week. Delivery is reported, not gated.")
+            }
+
             Section("Card picks (week check)") {
                 let picks = entries.filter { $0.spike == "card" }
                 row("Changes logged", "\(picks.count)")
@@ -98,15 +121,20 @@ struct SpikesView: View {
             }
         }
         .navigationTitle("M0 spikes")
-        .onAppear { entries = SpikeLog.read() }
+        .onAppear { entries = SpikeLog.read(); readIntegrity() }
         .task { if autorun { await runAll() } }
-        .refreshable { entries = SpikeLog.read() }
+        .refreshable { entries = SpikeLog.read(); readIntegrity() }
         .confirmationDialog("Clear the spike log?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Clear", role: .destructive) { SpikeLog.clear(); entries = [] }
         }
     }
 
     // MARK: Summary
+
+    private func readIntegrity() {
+        integrity = NotificationEngine.shared.integritySummary
+        lastCheck = NotificationEngine.shared.integrityHistory.last
+    }
 
     private var runs: [SpikeLog.Entry] {
         entries.filter { $0.spike == "s1" && $0.event == "run end" && $0.fields["manual"] != "true" }
