@@ -54,6 +54,8 @@ struct ExecTimes: Equatable {
     static let joinLead: TimeInterval = 5 * 60
 
     /// Set only for travel events.
+    let start: Date
+    let end: Date
     let leaveBy: Date?
     let getReadyAt: Date?
     let joinOpen: Date
@@ -97,6 +99,8 @@ struct ExecTimes: Equatable {
         let graceLead: TimeInterval = !i.isTask && i.attendance == .inPerson ? 20 * 60
             : isVirtual ? 15 * 60 : 10 * 60
 
+        self.start = i.start
+        self.end = i.end
         self.leaveBy = leaveBy
         self.getReadyAt = getReadyAt
         self.joinOpen = joinOpen
@@ -106,5 +110,61 @@ struct ExecTimes: Equatable {
         self.grace = min(i.start.addingTimeInterval(graceLead), i.end)
         self.isTravel = leaveBy != nil
         self.isVirtual = isVirtual
+    }
+}
+
+// MARK: - Phases (PRD v6 §3.6)
+
+/// Where an event stands, first match wins. Pure: the card and the sheet's
+/// top action both read it.
+enum ExecPhase: Equatable {
+    case done
+    case join
+    case onTheWay
+    /// Minutes past leave-by, 0 when on time ("about N min late").
+    case leave(lateMinutes: Int)
+    case getReady
+    case prepNow
+    case prepBy
+    case leaveBy
+    case now
+    case starts
+
+    /// Active phases (PRD §3.6 card selection), lower is stronger.
+    var activeRank: Int? {
+        switch self {
+        case .join, .leave: return 0
+        case .onTheWay: return 1
+        case .getReady: return 2
+        case .prepNow: return 3
+        case .now: return 4
+        default: return nil
+        }
+    }
+}
+
+struct PhaseState: Equatable {
+    /// Completed, dismissed, "I'm here" or joined.
+    var finished = false
+    var onTheWay = false
+    var prepDone = false
+}
+
+extension ExecTimes {
+    func phase(now: Date, state: PhaseState = .init()) -> ExecPhase {
+        if state.finished || now > grace { return .done }
+        if isVirtual && now >= joinOpen { return .join }
+        if isTravel && state.onTheWay { return .onTheWay }
+        if isTravel, let leaveBy, now >= leaveBy {
+            return .leave(lateMinutes: max(0, Int(now.timeIntervalSince(leaveBy) / 60)))
+        }
+        if isTravel, let getReadyAt, now >= getReadyAt { return .getReady }
+        // Prep phases end at the deadline (spec v3 §7.3).
+        if let prepStartBy, !state.prepDone, now < prepDeadline {
+            return now >= prepStartBy ? .prepNow : .prepBy
+        }
+        if isTravel { return .leaveBy }
+        if now >= start { return .now }
+        return .starts
     }
 }

@@ -49,6 +49,31 @@ enum HomeFixtures {
         return HomeDayBuilder.build(inputs: inputs, now: at(13, 52), bed: at(22, 0))
     }
 
+    /// Client review in 90 minutes at an address, with an invite, a deck link,
+    /// a Teams link and things the user typed.
+    static func sheetEvent() -> OlanaEvent {
+        let start = Calendar.current.date(byAdding: .minute, value: 90, to: Date())!
+        let e = OlanaEvent(title: "Client review", start: start, end: start.addingTimeInterval(3600), urgency: .high,
+                           externalCalendarId: "google", externalEventId: "fixture-1",
+                           notes: """
+                           Walk through the Q3 numbers and agree next steps.
+                           Deck: https://docs.google.com/presentation/d/abc/edit
+                           Pricing sheet: https://docs.google.com/spreadsheets/d/def/edit
+                           """,
+                           location: "Acme HQ, 500 Market St, San Francisco", calendarName: "Work")
+        e.prepItemsText = "Review the pricing sheet"
+        e.bringItemsText = "Laptop"
+        e.applyPlace(ResolvedPlace(name: "Acme HQ", address: "500 Market St, San Francisco", latitude: 37.79,
+                                   longitude: -122.40, phone: "(415) 555-0100", website: "https://acme.example.com"))
+        return e
+    }
+
+    static let sheetAssist = AssistOutcome.full(AssistResult(
+        source: .model, locationKind: .streetAddress, kind: .inPersonMeeting, needsTravel: true, attendance: .inPerson,
+        arriveEarlyMinutes: 10, outTheDoorMinutes: 5, effortMinutes: 30, helpers: [.leave, .prep, .materials, .bring, .place],
+        steps: ["Skim the deck"], bring: ["Printed agenda"], linkLabels: ["L1": "Client deck", "L2": "Pricing"],
+        dropped: [], version: 1))
+
     /// Saturday with nothing on it; the next thing that matters is Thursday.
     static func emptyDay() -> HomeDay {
         let review = input("Quarterly review", at(9, 0, dayOffset: 2), at(10, 0, dayOffset: 2), .high, prepHours: 2)
@@ -62,7 +87,18 @@ struct HomeFixtureScreen: View {
     @StateObject private var store = EventStore()
 
     var body: some View {
-        if which.hasPrefix("spikes-") {
+        if which == "sheet" || which == "sheet-free" {
+            // `-homeFixture sheet`: the event sheet on a fixed event, Plus on
+            // (or off with `sheet-free`), with a fixed EventAssist answer.
+            Color.clear
+                .sheet(isPresented: .constant(true)) {
+                    EventSheetView(event: HomeFixtures.sheetEvent(), fixtureOutcome: HomeFixtures.sheetAssist)
+                        .environmentObject(store)
+                        .homePalette()
+                        .presentationDetents([.large])
+                }
+                .onAppear { PlusAccess.setDebug(which == "sheet") }
+        } else if which.hasPrefix("spikes-") {
             // `-spikes open` or `-spikes autorun`: the Spikes screen, no login.
             NavigationStack { SpikesView(autorun: which == "spikes-autorun") }
                 .environmentObject(store)

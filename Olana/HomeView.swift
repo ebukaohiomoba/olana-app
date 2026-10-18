@@ -27,6 +27,9 @@ struct HomeView: View {
     @ObservedObject private var notificationSettings = NotificationSettings.shared
 
     @State private var editingEvent: OlanaEvent?
+    /// The event sheet (PRD v3 §1.7 Job 4); its Edit opens the edit panel.
+    @State private var sheetEvent: OlanaEvent?
+    @State private var editAfterSheet: OlanaEvent?
 
     // Delete confirmation for recurring events
     @State private var pendingDeleteID: UUID?
@@ -93,6 +96,17 @@ struct HomeView: View {
                 @unknown default:
                     break
                 }
+            }
+            .sheet(item: $sheetEvent, onDismiss: {
+                if let e = editAfterSheet { editAfterSheet = nil; editingEvent = e }
+            }) { event in
+                EventSheetView(event: event) {
+                    editAfterSheet = event
+                    sheetEvent = nil
+                }
+                .homePalette()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(item: $editingEvent) { event in
                 EditEventGlassPanel(event: event) { updated in
@@ -217,7 +231,7 @@ struct HomeView: View {
     // MARK: - Intents
 
     private func open(_ id: UUID) {
-        editingEvent = store.events.first { $0.id == id }
+        sheetEvent = store.events.first { $0.id == id }
     }
 
     private func toggleDone(_ id: UUID) {

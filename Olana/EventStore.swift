@@ -561,6 +561,64 @@ final class EventStore: ObservableObject {
         notificationObservers = [markDoneToken, snoozeToken]
     }
 
+    // MARK: - Overrides (PRD v3 §3.11)
+
+    private func overrideRecord(_ key: String) -> AssistOverride? {
+        var d = FetchDescriptor<AssistOverride>(predicate: #Predicate { $0.key == key })
+        d.fetchLimit = 1
+        return try? context.fetch(d).first
+    }
+
+    /// The event's and the series' override values, for `OverrideResolver`.
+    func overrides(for event: OlanaEvent) -> (event: OverrideValues?, series: OverrideValues?) {
+        let e = overrideRecord(event.overrideEventKey)?.values
+        let s = event.overrideSeriesKey.flatMap { overrideRecord($0)?.values }
+        return (e?.isEmpty == true ? nil : e, s?.isEmpty == true ? nil : s)
+    }
+
+    func effectiveOverrides(for event: OlanaEvent) -> EffectiveOverrides {
+        let o = overrides(for: event)
+        return OverrideResolver.resolve(event: o.event, series: o.series)
+    }
+
+    /// Edit one override field set, for this event or every event in its
+    /// series ("This event / All events in this series"). A series edit clears
+    /// the same fields on this event so the new series value shows.
+    func updateOverride(for event: OlanaEvent, scope: OverrideScope, _ change: (inout OverrideValues) -> Void) {
+        let key: String
+        switch scope {
+        case .event: key = event.overrideEventKey
+        case .series:
+            guard let k = event.overrideSeriesKey else { return updateOverride(for: event, scope: .event, change) }
+            key = k
+        }
+        let record = overrideRecord(key) ?? {
+            let r = AssistOverride(key: key, scope: scope)
+            context.insert(r)
+            return r
+        }()
+        var values = record.values
+        let before = values
+        change(&values)
+        guard values != before else { return }
+        record.apply(values)
+        if scope == .series, let own = overrideRecord(event.overrideEventKey) {
+            var ev = own.values
+            if values.steps != before.steps { ev.steps = nil }
+            if values.bring != before.bring { ev.bring = nil }
+            if values.assistMode != before.assistMode { ev.assistMode = nil }
+            if ev != own.values { own.apply(ev) }
+        }
+        try? context.save()
+        NotificationEngine.shared.requestReplan("override")
+    }
+
+    /// Settings › Privacy: delete series and event overrides (PRD v3 §3.16).
+    func deleteAllOverrides() {
+        try? context.delete(model: AssistOverride.self)
+        try? context.save()
+    }
+
     private func saveAndRefresh() {
         do {
             try context.save()

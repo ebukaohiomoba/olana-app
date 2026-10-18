@@ -10,7 +10,7 @@ final class Persistence {
         // Models synced via CloudKit.
         // Calendar models (UserCalendar, CalendarPreferences) live in CalendarPersistence —
         // a separate local-only store, because EKCalendar identifiers are per-device UUIDs.
-        let schema = Schema([OlanaEvent.self, UserPreferences.self])
+        let schema = Schema([OlanaEvent.self, UserPreferences.self, AssistOverride.self])
 
         let configuration: ModelConfiguration
         if inMemory {

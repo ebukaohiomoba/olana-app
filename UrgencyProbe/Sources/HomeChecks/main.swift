@@ -164,5 +164,23 @@ expect("times: a task never travels or joins, but keeps prep",
 expect("times: grace never runs past the end", times(minutes: 5).grace == at(15, 5))
 expect("times: PREP NOW's upcoming moment is deadline − effort", trip.prepMoment == at(13, 26))
 
+// Phases (PRD v6 §3.6), first match wins. trip: prep 13:26–14:26, get ready 14:26, leave 14:31, start 15:00, grace 15:20.
+expect("phase: before prep, PREP BY", trip.phase(now: at(13, 0)) == .prepBy)
+expect("phase: in the prep window, PREP NOW", trip.phase(now: at(13, 30)) == .prepNow)
+expect("phase: prep done skips to LEAVE BY", trip.phase(now: at(13, 30), state: .init(prepDone: true)) == .leaveBy)
+expect("phase: at get-ready, GET READY (prep has ended)", trip.phase(now: at(14, 27)) == .getReady)
+expect("phase: at leave-by, LEAVE, on time", trip.phase(now: at(14, 31)) == .leave(lateMinutes: 0))
+expect("phase: 6 min late, LEAVE stays with the lateness", trip.phase(now: at(14, 37)) == .leave(lateMinutes: 6))
+expect("phase: I'm leaving, ON THE WAY", trip.phase(now: at(14, 33), state: .init(onTheWay: true)) == .onTheWay)
+expect("phase: after grace, DONE", trip.phase(now: at(15, 21)) == .done)
+expect("phase: I'm here, DONE", trip.phase(now: at(14, 50), state: .init(finished: true)) == .done)
+expect("phase: virtual, JOIN from join-open until grace", call.phase(now: at(14, 54)) == .prepNow
+         && call.phase(now: at(14, 55)) == .join && call.phase(now: at(15, 14)) == .join && call.phase(now: at(15, 16)) == .done)
+expect("phase: no travel, no prep: STARTS then NOW", times().phase(now: at(14, 0)) == .starts && times().phase(now: at(15, 5)) == .now)
+expect("phase: active ranks JOIN = LEAVE > ON THE WAY > GET READY > PREP NOW > NOW",
+       ExecPhase.join.activeRank == 0 && ExecPhase.leave(lateMinutes: 3).activeRank == 0 && ExecPhase.onTheWay.activeRank == 1
+         && ExecPhase.getReady.activeRank == 2 && ExecPhase.prepNow.activeRank == 3 && ExecPhase.now.activeRank == 4
+         && ExecPhase.starts.activeRank == nil && ExecPhase.leaveBy.activeRank == nil)
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)
