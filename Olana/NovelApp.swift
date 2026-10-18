@@ -37,6 +37,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        DeliveryLedger.shared.noteSeen(notification.request.identifier, at: notification.date)
         completionHandler([.banner, .sound, .badge])
     }
 
@@ -45,6 +46,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        DeliveryLedger.shared.noteSeen(response.notification.request.identifier, at: response.notification.date)
         let userInfo = response.notification.request.content.userInfo
         if let eventIdString = userInfo["eventId"] as? String,
            let eventId = UUID(uuidString: eventIdString) {

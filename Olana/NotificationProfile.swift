@@ -694,6 +694,13 @@ class NotificationEngine: ObservableObject {
         /// history saved before M1-A's execution store still decodes.
         var execPlanned: Int? = nil
         var execMissing: Int? = nil
+        /// Not pending after the diff and added again (spec §5.6 step 2).
+        var readded: Int? = nil
+        /// The last add error, kept with "unknown" so the cause isn't lost.
+        var addError: String? = nil
+        /// Observable delivery since the last check (step 3), reported only.
+        var deliveryDue: Int? = nil
+        var deliveryObserved: Int? = nil
     }
 
     /// Bring pending reminders in line with the plan, then check nothing
@@ -722,12 +729,12 @@ class NotificationEngine: ObservableObject {
 
         let pending = await center.pendingNotificationRequests()
         // Snoozes, immediates and debug tests count against iOS's limit too.
-        let others = pending.filter { !AlertID.isPlannedFloor($0.identifier) && !AlertID.isExec($0.identifier) }.count
+        let others = pending.filter { !AlertID.isPlannedFloor($0.identifier) && !AlertID.isPlannedExec($0.identifier) }.count
         let plan = AlertPlanner.plan(slots, now: now, limit: max(0, AlertPlanner.pendingLimit - others))
         // Floor and execution are diffed separately, so neither can remove the other's.
         let keys = pending.map(Self.pendingKey)
         let floorDiff = AlertPlanner.diff(desired: plan.keep, pending: keys, in: AlertID.isPlannedFloor)
-        let execDiff = AlertPlanner.diff(desired: plan.keep, pending: keys, in: AlertID.isExec)
+        let execDiff = AlertPlanner.diff(desired: plan.keep, pending: keys, in: AlertID.isPlannedExec)
         let diff = AlertPlanner.Diff(add: floorDiff.add + execDiff.add, remove: floorDiff.remove + execDiff.remove)
 
         if !diff.remove.isEmpty {
@@ -759,20 +766,42 @@ class NotificationEngine: ObservableObject {
         scheduledRecords = records
         saveRecords()
 
-        // Integrity: everything planned should now be pending.
-        let after = Set(await center.pendingNotificationRequests().map(\.identifier))
-        let missing = AlertPlanner.missingFloor(planned: plan.keep, pendingIDs: after, now: Date())
+        // Integrity (spec §5.6): everything planned should now be pending.
+        // Re-add what isn't, once, then count what's still missing.
         let execKept = plan.keep.filter { $0.kind == .exec }
+        func notPending(_ ids: Set<String>) -> [AlertSlot] {
+            AlertPlanner.missingFloor(planned: plan.keep, pendingIDs: ids, now: Date())
+                + execKept.filter { $0.fireDate > Date() && !ids.contains($0.id) }
+        }
+        var after = Set(await center.pendingNotificationRequests().map(\.identifier))
+        let retry = notPending(after)
+        if !retry.isEmpty {
+            for slot in retry {
+                do { try await center.add(request(for: slot)) }
+                catch { addFailure = "\(error)" }
+            }
+            after = Set(await center.pendingNotificationRequests().map(\.identifier))
+        }
+        let floorCheck = AlertPlanner.floorCheck(plan, pendingIDs: after, now: Date())
         let execMissing = execKept.filter { $0.fireDate > Date() && !after.contains($0.id) }.count
         if !plan.overflow.isEmpty {
             print("⚠️ AlertPlanner: \(plan.overflow.count) reminders over capacity (\(plan.overflow.filter { $0.kind == .floor }.count) floor)")
         }
+
+        // Observable delivery (step 3): what came due since the last check.
+        let delivered = await center.deliveredNotifications()
+        let delivery = DeliveryLedger.shared.check(
+            kept: plan.keep,
+            delivered: Dictionary(delivered.map { ($0.request.identifier, $0.date) }, uniquingKeysWith: max),
+            now: now)
+
         return record(IntegrityResult(
             at: now, reason: reason, planned: plan.keep.count,
             added: diff.add.count, removed: diff.remove.count, overflow: plan.overflow.count,
-            missing: missing.count,
-            missingReason: missing.isEmpty ? nil : (addFailure ?? "unknown"),
-            execPlanned: execKept.count, execMissing: execMissing))
+            missing: floorCheck.missing, missingReason: floorCheck.reason,
+            execPlanned: execKept.count, execMissing: execMissing,
+            readded: retry.count, addError: floorCheck.missing + execMissing > 0 ? addFailure : nil,
+            deliveryDue: delivery.due, deliveryObserved: delivery.observed))
     }
 
     /// Execution alerts an event wants (prep, get-ready, leave, join). Empty
@@ -846,21 +875,38 @@ class NotificationEngine: ObservableObject {
 
     private let immediateKey = "olanaImmediateSent_v1"
     private let integrityKey = "olanaFloorIntegrity_v1"
+    private let summaryKey = "olanaIntegritySummary_v1"
 
-    /// The last 200 integrity results, for the M1-A gate (one week, zero missing).
+    /// The last 200 integrity results, for debugging. The gate reads
+    /// `integritySummary`, which never rolls.
     var integrityHistory: [IntegrityResult] {
         guard let data = UserDefaults.standard.data(forKey: integrityKey) else { return [] }
         return (try? JSONDecoder().decode([IntegrityResult].self, from: data)) ?? []
     }
 
+    /// Running totals for the M1-A gate (one week, zero missing).
+    var integritySummary: IntegritySummary {
+        guard let data = UserDefaults.standard.data(forKey: summaryKey) else { return IntegritySummary() }
+        return (try? JSONDecoder().decode(IntegritySummary.self, from: data)) ?? IntegritySummary()
+    }
+
     @discardableResult
     private func record(_ r: IntegrityResult) -> IntegrityResult {
+        var summary = integritySummary
+        summary.add(at: r.at, missing: r.missing, reason: r.missingReason, execMissing: r.execMissing ?? 0,
+                    deliveryDue: r.deliveryDue ?? 0, deliveryObserved: r.deliveryObserved ?? 0)
+        if let data = try? JSONEncoder().encode(summary) { UserDefaults.standard.set(data, forKey: summaryKey) }
+
         var all = integrityHistory
         all.append(r)
         if all.count > 200 { all.removeFirst(all.count - 200) }
         if let data = try? JSONEncoder().encode(all) { UserDefaults.standard.set(data, forKey: integrityKey) }
         if r.missing > 0 {
-            print("❌ Floor integrity: \(r.missing) missing (\(r.missingReason ?? "unknown")) after \(r.reason)")
+            print("❌ Floor integrity: \(r.missing) missing (\(r.missingReason ?? "unknown")) after \(r.reason)"
+                  + (r.addError.map { ": \($0)" } ?? ""))
+        }
+        if let due = r.deliveryDue, due > 0 {
+            print("📬 Delivery: \(r.deliveryObserved ?? 0)/\(due) observed since the last check")
         }
         return r
     }
@@ -934,6 +980,7 @@ class NotificationEngine: ObservableObject {
         scheduledRecords.removeValue(forKey: eventId)
         saveRecords()
         ExecutionAlertStore.shared.remove(eventId)
+        DeliveryLedger.shared.forget { $0.contains(eventId.uuidString) }
         // Not gated on a notification record: an alarm or Live Activity can
         // exist without one, and must not outlive its event.
         await endLiveActivity(for: eventId)
@@ -945,6 +992,7 @@ class NotificationEngine: ObservableObject {
         scheduledRecords.removeAll()
         saveRecords()
         ExecutionAlertStore.shared.replace(with: [])
+        DeliveryLedger.shared.forget { _ in true }
     }
 
     // MARK: - Snooze Reschedule

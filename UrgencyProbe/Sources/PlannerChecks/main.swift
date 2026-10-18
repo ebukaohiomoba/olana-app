@@ -64,7 +64,7 @@ check("A2 second replan is a no-op", d2.isEmpty, "add \(d2.add.count) remove \(d
 let ev = UUID()
 let floorOnly = floor(ev, start: h(3), before: [2, 0.25])
 let e9 = AlertPlanner.diff(desired: [exec(ev, start: h(3), fire: h(2.5), priority: true)],
-                           pending: pending(floorOnly), in: AlertID.isExec)
+                           pending: pending(floorOnly), in: AlertID.isPlannedExec)
 check("A9 execution diff never removes floor", e9.remove.isEmpty && e9.add.count == 1)
 let f9 = AlertPlanner.diff(desired: floorOnly, pending: pending(floorOnly) + [.init(id: AlertID.exec(.leave, event: ev, planVersion: "v1"), contentKey: "x")],
                            in: AlertID.isPlannedFloor)
@@ -160,11 +160,11 @@ func execSlot(_ kind: ExecKind, _ version: String, fire: Date) -> AlertSlot {
               fireDate: fire, priority: true, title: "E", subtitle: "", body: "Leave now", category: "EXEC", urgencyRaw: 2, index: 0)
 }
 let oldLeave = execSlot(.leave, "v1", fire: h(2.5)), newLeave = execSlot(.leave, "v2", fire: h(2.4))
-let rv = AlertPlanner.diff(desired: floorOnly + [newLeave], pending: pending(floorOnly + [oldLeave]), in: AlertID.isExec)
+let rv = AlertPlanner.diff(desired: floorOnly + [newLeave], pending: pending(floorOnly + [oldLeave]), in: AlertID.isPlannedExec)
 check("new planVersion: stale exec removed, new added, floor untouched",
       rv.remove == [oldLeave.id] && rv.add.map(\.id) == [newLeave.id])
 check("empty execution plan (M1-A) removes only exec alerts",
-      AlertPlanner.diff(desired: floorOnly, pending: pending(floorOnly + [oldLeave]), in: AlertID.isExec).remove == [oldLeave.id])
+      AlertPlanner.diff(desired: floorOnly, pending: pending(floorOnly + [oldLeave]), in: AlertID.isPlannedExec).remove == [oldLeave.id])
 
 // Store: rewritten from the kept plan, persisted, floor ignored.
 let storeURL = FileManager.default.temporaryDirectory.appendingPathComponent("exec_\(UUID().uuidString).json")
@@ -179,6 +179,80 @@ check("store remove (Mark done)", store.ids(for: ev).isEmpty && ExecutionAlertSt
 store.replace(with: [newLeave]); store.replace(with: [])
 check("store replace with an empty plan clears it", store.allIDs.isEmpty)
 try? FileManager.default.removeItem(at: storeURL)
+
+// Integrity check (spec v3 §5.6): what the gate counts as missing.
+var crowd: [AlertSlot] = []
+for i in 0..<62 { crowd += floor(UUID(), start: h(1 + Double(i) * 0.3), before: [0.25, 0.5]) }
+let crowdPlan = AlertPlanner.plan(crowd, now: now)
+let crowdCheck = AlertPlanner.floorCheck(crowdPlan, pendingIDs: Set(crowdPlan.keep.map(\.id)), now: now)
+check("integrity: first floor in 24 h pushed out by capacity is missing (capacity)",
+      crowdCheck.capacity.count == 2 && crowdCheck.notPending.isEmpty && crowdCheck.reason == "capacity")
+let laterOver = AlertPlanner.plan(floor(UUID(), start: h(30), before: [1, 2]) + floorOnly, now: now, limit: 3)
+check("integrity: later floor reminders over capacity are overflow, not missing",
+      !laterOver.overflow.isEmpty
+        && AlertPlanner.floorCheck(laterOver, pendingIDs: Set(laterOver.keep.map(\.id)), now: now).missing == 0)
+let fullCheck = AlertPlanner.floorCheck(AlertPlanner.plan(floorOnly, now: now), pendingIDs: [floorOnly[0].id], now: now)
+check("integrity: planned but not pending is missing (unknown)",
+      fullCheck.notPending.map(\.id) == [floorOnly[1].id] && fullCheck.reason == "unknown")
+check("integrity: all pending means no reason",
+      AlertPlanner.floorCheck(AlertPlanner.plan(floorOnly, now: now), pendingIDs: Set(floorOnly.map(\.id)), now: now).reason == nil)
+check("integrity: exec alerts never count toward the floor gate",
+      AlertPlanner.floorCheck(AlertPlanner.plan(floorOnly + [newLeave], now: now),
+                              pendingIDs: Set(floorOnly.map(\.id)), now: now).missing == 0)
+
+// Observable delivery (spec v3 §5.6 step 3).
+let suite = "planner_checks_\(UUID().uuidString)"
+let ledger = DeliveryLedger(defaults: UserDefaults(suiteName: suite)!)
+let fires = floor(ev, start: h(2), before: [1.5, 1, 0.5])           // fire at h(0.5), h(1), h(1.5)
+check("delivery: first check has nothing due", ledger.check(kept: fires, delivered: [:], now: now) == .init(due: 0, observed: 0))
+ledger.noteSeen(fires[1].id, at: h(1))                              // shown in the foreground
+ledger.noteSeen("olana:\(ev.uuidString):snooze:1", at: h(1))     // not planned: ignored
+let c2 = ledger.check(kept: fires, delivered: [fires[0].id: h(0.5)], now: h(1.2))
+check("delivery: due since the last check, observed via Notification Center or willPresent",
+      c2 == .init(due: 2, observed: 2), "\(c2)")
+let c3 = ledger.check(kept: fires, delivered: [:], now: h(1.6))
+check("delivery: unseen firing is due but not observed", c3 == .init(due: 1, observed: 0), "\(c3)")
+check("delivery: nothing counted twice", ledger.check(kept: [], delivered: [:], now: h(3)) == .init(due: 0, observed: 0))
+let refired = floor(ev, start: h(5), before: [1])                  // same id as fires[0], fires at h(4)
+_ = ledger.check(kept: refired, delivered: [:], now: h(3))
+check("delivery: an old sighting of a reused id doesn't count for a later firing",
+      ledger.check(kept: [], delivered: [refired[0].id: h(0.5)], now: h(4.5)) == .init(due: 1, observed: 0))
+_ = ledger.check(kept: refired, delivered: [:], now: h(3))         // planned for h(4)
+_ = ledger.check(kept: [], delivered: [:], now: h(3.5))          // then removed by a replan
+check("delivery: replanned-out alerts aren't due",
+      ledger.check(kept: [], delivered: [:], now: h(5)) == .init(due: 0, observed: 0))
+let ledger2 = DeliveryLedger(defaults: UserDefaults(suiteName: suite)!)
+let other = UUID(), otherFires = floor(other, start: h(7), before: [1])   // fires at h(6)
+_ = ledger2.check(kept: refired + otherFires, delivered: [:], now: h(3))
+ledger2.forget { $0.contains(ev.uuidString) }                    // Mark done on ev
+check("delivery: a cancelled event's alerts aren't due, others still are",
+      ledger2.check(kept: [], delivered: [:], now: h(6.5)) == .init(due: 1, observed: 0))
+UserDefaults().removePersistentDomain(forName: suite)
+
+// Leave snoozes are a user action (audit #1): the exec diff never removes them.
+let leaveSnooze = AlertPlanner.Pending(id: AlertID.exec(.leaveSnooze, event: ev, planVersion: "v1"), contentKey: "s")
+check("exec: a pending leave snooze survives a replan that doesn't plan it",
+      AlertPlanner.diff(desired: floorOnly + [newLeave], pending: pending([newLeave]) + [leaveSnooze],
+                        in: AlertID.isPlannedExec).remove.isEmpty)
+check("exec: leave snoozes are execution ids but not planned ones",
+      AlertID.isExec(leaveSnooze.id) && !AlertID.isPlannedExec(leaveSnooze.id) && AlertID.isPlannedExec(newLeave.id))
+
+// The gate's running totals (audit #2, #4).
+var sum = IntegritySummary()
+sum.add(at: h(0), missing: 0, reason: nil)
+sum.add(at: h(24 * 3), missing: 0, reason: nil)
+check("summary: a clean run starts at the first clean check", sum.cleanSince == h(0) && !sum.gatePassed(now: h(24 * 3)))
+sum.add(at: h(24 * 7), missing: 0, reason: nil)
+check("summary: seven clean days pass the gate", sum.gatePassed(now: h(24 * 7)))
+sum.add(at: h(24 * 7 + 1), missing: 0, reason: "notAuthorized")
+check("summary: a check with notifications off is counted apart and breaks the run",
+      sum.notAuthorizedChecks == 1 && sum.missingChecks == 0 && sum.cleanSince == nil && !sum.gatePassed(now: h(24 * 8)))
+sum.add(at: h(24 * 8), missing: 0, reason: nil)
+sum.add(at: h(24 * 9), missing: 2, reason: "capacity")
+check("summary: a miss resets the run and keeps its reason",
+      sum.missingChecks == 1 && sum.cleanSince == nil && sum.lastMissingReason == "capacity" && sum.checks == 6)
+sum.add(at: h(24 * 9 + 1), missing: 0, reason: nil)
+check("summary: the next clean check starts a new run", sum.cleanSince == h(24 * 9 + 1) && sum.since == h(0))
 
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)
