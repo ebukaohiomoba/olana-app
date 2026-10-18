@@ -1,0 +1,70 @@
+# Capture set (PRD v6 §3.14 kinds). Labels are mine; review before treating as final.
+# message | place ("-" none, "/" alts) | items (";", "-" none) | early minutes ("-" none, "?" skip) | attendance | travel | group
+#
+# N · named place
+dentist tmrw 3pm at smile dental | smile dental | - | - | inPerson | yes | N
+haircut at great clips saturday 10am | great clips | - | - | inPerson | yes | N
+dinner with mom at olive garden friday 7pm | olive garden | - | - | inPerson | yes | N
+lunch w/ jen at sweetgreen noon tmrw | sweetgreen | - | - | inPerson | yes | N
+vet appt for max at banfield 11am | banfield | - | - | inPerson | yes | N
+gym 6pm at equinox flatiron | equinox flatiron | - | - | inPerson | yes | N
+coffee with priya at philz 9am | philz | - | - | inPerson | yes | N
+drinks with the team at the tipsy cow after work | tipsy cow/the tipsy cow | - | - | inPerson | yes | N
+chem final monday 9am in hall b | hall b | - | - | inPerson | yes | N
+flu shot at walgreens thursday | walgreens | - | - | inPerson | yes | N
+#
+# S · street address (detector)
+pick up keys 22 oak ave 5pm | 22 oak ave | - | - | inPerson | yes | S
+open house 1450 Market Street San Francisco sunday 1pm | 1450 market street san francisco/1450 market street | - | - | inPerson | yes | S
+#
+# P · no place (inventing one is the costly error)
+call with sam at 4 | - | - | - | virtual | no | P
+taxes due friday | - | - | - | ? | no | P
+dentist 3pm | - | - | - | inPerson | yes | P
+gym | - | - | - | inPerson | ? | P
+team standup 9:30 | - | - | - | ? | ? | P
+submit expense report by friday | - | - | - | ? | no | P
+pay rent on the 1st | - | - | - | ? | no | P
+interview thursday 10am | - | - | - | ? | ? | P
+mom's birthday saturday | - | - | - | ? | ? | P
+work on thesis draft all afternoon | - | - | - | ? | no | P
+#
+# O · online
+standup zoom 9am | - | - | - | virtual | no | O
+interview thursday 10am on zoom | - | - | - | virtual | no | O
+sync with vendor on teams 2pm | - | - | - | virtual | no | O
+webinar intro to dbt wed 1pm | - | - | - | virtual | no | O
+facetime grandma sunday | - | - | - | virtual | no | O
+design review https://meet.google.com/abc-defg-hij 3pm | - | - | - | virtual | no | O
+#
+# R · personal places (found, not geocoded)
+dinner at mom's sunday 6 | mom's | - | - | inPerson | yes | R
+game night at my place friday | my place | - | - | inPerson | no | R
+book club at sara's thursday 7 | sara's | - | - | inPerson | yes | R
+#
+# T · time words that look like places
+lunch at noon | - | - | - | ? | ? | T
+meeting at 3 at work | work | - | - | inPerson | ? | T
+call at 5:30 | - | - | - | virtual | no | T
+#
+# B · bring and prep
+dentist tomorrow 3pm, bring insurance card | - | insurance card | - | inPerson | yes | B
+interview thu 10, bring 2 copies of resume and review the job post | - | 2 copies of resume;review the job post | - | ? | ? | B
+potluck at jen's saturday, bring a dish | jen's | a dish | - | inPerson | yes | B
+board meeting monday 9, print the agenda | - | print the agenda | - | ? | ? | B
+parent teacher conference wed 6pm, bring report card | - | report card | - | inPerson | yes | B
+1:1 with manager friday, send agenda first | - | send agenda | - | ? | ? | B
+#
+# E · arrive early
+dentist 3pm at smile dental, be there 15 min early | smile dental | - | 15 | inPerson | yes | E
+concert at msg friday 8pm get there early | msg | - | ? | inPerson | yes | E
+dmv tuesday 9am need to be there half an hour early | dmv | - | 30 | inPerson | yes | E
+#
+# M · several things at once
+flight fri 7:30am JFK T4 2 hrs early bring passport | jfk t4 | passport | 120 | inPerson | yes | M
+dentist tomorrow 3pm at smile dental, bring insurance card, be there 10 min early | smile dental | insurance card | 10 | inPerson | yes | M
+interview thursday 10am on zoom, review my portfolio first | - | review my portfolio | - | virtual | no | M
+#
+# Z · terse
+dentist 3 | - | - | - | ? | ? | Z
+gym 6 | - | - | - | ? | ? | Z

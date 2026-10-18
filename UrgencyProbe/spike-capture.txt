@@ -1,0 +1,104 @@
+Building for debugging...
+[1 / 5]
+[2 / 6] CaptureChecks-product
+[6 / 10] CaptureChecks-product
+[7 / 10] CaptureChecks-product
+/Users/chukwuebukaohiomoba/Documents/Novel/UrgencyProbe/Sources/CaptureChecks/Capture.swift:365:23: [1;33mwarning: [1;39m'init(sampling:temperature:maximumResponseTokens:)' is deprecated: replaced by 'init(samplingMode:temperature:maximumResponseTokens:)'[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+[0;36m363 |[0;0m     static func parse(_ message: String) async -> CaptureModelOutput? {
+[0;36m364 |[0;0m         guard case .available = SystemLanguageModel.default.availability else { return nil }
+[0;36m365 |[0;0m         let options = GenerationOptions(sampling: .greedy)
+    [0;36m|[0;0m                       |- [1;33mwarning: [1;39m'init(sampling:temperature:maximumResponseTokens:)' is deprecated: replaced by 'init(samplingMode:temperature:maximumResponseTokens:)'[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+    [0;36m|[0;0m                       `- [1;39mnote: [1;39muse 'init(samplingMode:temperature:maximumResponseTokens:)' instead[0;0m
+[0;36m366 |[0;0m         for attempt in 0..<2 {
+[0;36m367 |[0;0m             let session = LanguageModelSession(instructions: CapturePrompt.instructions)
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+/Users/chukwuebukaohiomoba/Documents/Novel/UrgencyProbe/Package.swift: CaptureChecks-product: ld: warning: search path '/Library/Developer/CommandLineTools/Developer/usr/lib' not found
+/Users/chukwuebukaohiomoba/Documents/Novel/UrgencyProbe/Package.swift: CaptureChecks-product: ld: warning: search path '/Library/Developer/CommandLineTools/Developer/Library/Frameworks' not found
+[9 / 10] CaptureChecks-product
+Build complete! (1.19 sec)
+MESSAGE                                                   PLACE                 ITEMS                           EARLY ATT       TRV  WRONG
+dentist tmrw 3pm at smile dental                          smile dental                                          -     inPerson  yes  
+haircut at great clips saturday 10am                      great clips                                           -     inPerson  yes  
+dinner with mom at olive garden friday 7pm                olive garden                                          -     inPerson  yes  
+     dropped by code: item (the event itself): dinner with mom
+lunch w/ jen at sweetgreen noon tmrw                      sweetgreen                                            -     inPerson  yes  
+     dropped by code: item (the event itself): lunch w/ jen
+vet appt for max at banfield 11am                         banfield                                              -     inPerson  yes  
+     dropped by code: item (the event itself): vet appt
+gym 6pm at equinox flatiron                               equinox flatiron                                      -     inPerson  yes  
+coffee with priya at philz 9am                            philz                                                 -     inPerson  yes  
+     dropped by code: item (the event itself): coffee
+drinks with the team at the tipsy cow after work          the tipsy cow                                         -     inPerson  yes  
+     dropped by code: item (the event itself): drinks with the team
+chem final monday 9am in hall b                           hall b                                                -     inPerson  yes  
+     dropped by code: item (the event itself): chem final
+flu shot at walgreens thursday                            walgreens                                             -     inPerson  yes  
+     dropped by code: item (the event itself): flu shot
+pick up keys 22 oak ave 5pm                               22 oak ave                                            -     inPerson  yes  
+     dropped by code: item (the event itself): pick up keys
+open house 1450 Market Street San Francisco sunday 1pm    1450 Market Street Sa                                 -     inPerson  yes  
+call with sam at 4                                        -                                                     -     virtual   no   
+taxes due friday                                          -                                                     -     unsure    no   
+dentist 3pm                                               -                                                     -     inPerson  no   travel
+     dropped by code: place (not a place): dentist
+     model said: CaptureModelOutput(placeText: "dentist", prepItems: [], arriveEarlyText: "", arriveEarlyBucket: CaptureChecks.ArriveEarlyBucket.none, attendance: CaptureChecks.CaptureAttendance.inPerson, likelyNeedsTravel: false)
+gym                                                       -                                                     -     inPerson  no   
+     dropped by code: place (not a place): gym
+team standup 9:30                                         -                                                     -     unsure    no   
+submit expense report by friday                           -                                                     -     unsure    no   
+     dropped by code: item (the event itself): submit expense report
+pay rent on the 1st                                       -                                                     -     unsure    no   
+interview thursday 10am                                   -                                                     -     unsure    no   
+mom's birthday saturday                                   -                                                     -     inPerson  no   
+work on thesis draft all afternoon                        -                                                     -     unsure    no   
+standup zoom 9am                                          -                                                     -     virtual   no   
+interview thursday 10am on zoom                           -                                                     -     virtual   no   
+sync with vendor on teams 2pm                             -                                                     -     virtual   no   
+webinar intro to dbt wed 1pm                              -                                                     -     virtual   no   
+facetime grandma sunday                                   -                                                     -     virtual   no   
+design review https://meet.google.com/abc-defg-hij 3pm    -                                                     -     virtual   no   
+dinner at mom's sunday 6                                  mom's                                                 -     inPerson  yes  
+game night at my place friday                             my place                                              -     inPerson  no   
+book club at sara's thursday 7                            sara's                                                -     inPerson  yes  
+lunch at noon                                             -                                                     -     unsure    no   
+meeting at 3 at work                                      work                                                  -     inPerson  yes  
+call at 5:30                                              -                                                     -     virtual   no   
+dentist tomorrow 3pm, bring insurance card                -                     bring:Insurance card            -     inPerson  no   travel
+     dropped by code: place (not a place): dentist
+     model said: CaptureModelOutput(placeText: "dentist", prepItems: ["bring insurance card"], arriveEarlyText: "", arriveEarlyBucket: CaptureChecks.ArriveEarlyBucket.none, attendance: CaptureChecks.CaptureAttendance.inPerson, likelyNeedsTravel: false)
+interview thu 10, bring 2 copies of resume and review the -                     bring:2 copies of resume; do:Re -     inPerson  yes  
+potluck at jen's saturday, bring a dish                   jen's                 bring:A dish                    -     inPerson  yes  
+board meeting monday 9, print the agenda                  -                     do:Print the agenda             -     inPerson  no   
+parent teacher conference wed 6pm, bring report card      -                     bring:Report card               -     inPerson  no   travel
+     dropped by code: place (not a place): parent teacher conference
+     model said: CaptureModelOutput(placeText: "parent teacher conference", prepItems: ["bring report card"], arriveEarlyText: "", arriveEarlyBucket: CaptureChecks.ArriveEarlyBucket.none, attendance: CaptureChecks.CaptureAttendance.inPerson, likelyNeedsTravel: false)
+1:1 with manager friday, send agenda first                -                     do:Send agenda                  -     inPerson  no   
+dentist 3pm at smile dental, be there 15 min early        smile dental                                          15    inPerson  yes  
+concert at msg friday 8pm get there early                 -                                                     5     inPerson  yes  place
+     dropped by code: place (not a place): concert
+     model said: CaptureModelOutput(placeText: "concert", prepItems: ["get there early"], arriveEarlyText: "get there early", arriveEarlyBucket: CaptureChecks.ArriveEarlyBucket.few, attendance: CaptureChecks.CaptureAttendance.inPerson, likelyNeedsTravel: true)
+dmv tuesday 9am need to be there half an hour early       -                                                     30    inPerson  yes  place
+     dropped by code: place (not a place): dmv
+     model said: CaptureModelOutput(placeText: "dmv", prepItems: ["need to be there"], arriveEarlyText: "half an hour early", arriveEarlyBucket: CaptureChecks.ArriveEarlyBucket.half, attendance: CaptureChecks.CaptureAttendance.inPerson, likelyNeedsTravel: true)
+flight fri 7:30am JFK T4 2 hrs early bring passport       JFK T4                bring:Passport                  120   inPerson  yes  
+dentist tomorrow 3pm at smile dental, bring insurance car smile dental          bring:Insurance card            10    inPerson  yes  
+interview thursday 10am on zoom, review my portfolio firs -                     do:Review my portfolio          -     virtual   no   
+dentist 3                                                 -                                                     -     inPerson  no   
+     dropped by code: place (not a place): dentist
+gym 6                                                     -                                                     -     inPerson  no   
+     dropped by code: place (not a place): gym
+
+GROUP  N   NO PLACE OK  PLACE OK  ITEMS   EXTRA  EARLY   ATTEND  TRAVEL  FAILS
+B      6   100%         100%      100%    0      100%    100%    33%     0
+E      3   -            33%       -       0      100%    100%    100%    0
+M      3   100%         100%      100%    0      100%    100%    100%    0
+N      10  -            100%      -       0      100%    100%    100%    0
+O      6   100%         -         -       0      100%    100%    100%    0
+P      10  100%         -         -       0      100%    100%    83%     0
+R      3   -            100%      -       0      100%    100%    100%    0
+S      2   -            100%      -       0      100%    100%    100%    0
+T      3   100%         100%      -       0      100%    100%    100%    0
+Z      2   100%         -         -       0      100%    -       -       0
+ALL    48  100%         90%       100%    0      100%    100%    91%     0
+Bars (PRD v6 §3.14): no place returned ≥ 98% · place words ≥ 90% · items found ≥ 90% · none invented ≥ 98%
