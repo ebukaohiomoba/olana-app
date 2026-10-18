@@ -188,6 +188,33 @@ check("keys: a one-off synced event has no series",
 check("keys: native repeating events key on title and rule",
       OverrideKeys.series(source: nil, seriesID: nil, iCalUID: nil, isRecurring: true, title: "Gym", rule: "2") == "native|series|gym|2")
 
+// MARK: Plus (PRD v6 §1.10)
+
+var plus = PlusState()
+check("plus: the preview starts unlocked", PlusRules.hasPlus(plus, gatePassed: true) && PlusRules.inPreview(plus))
+check("plus: never sold or unlocked without Apple Intelligence", !PlusRules.hasPlus(plus, gatePassed: false))
+var ended = false
+for (i, k) in [PlusMomentKind.leftOnTime, .prepStarted, .leftOnTime, .bringUsed, .gotReady].enumerated() {
+    (plus, ended) = PlusRules.record(PlusMoment(kind: k, eventKey: "e\(i)", at: at(9, i)), in: plus)
+    if i < 4 { check("plus: moment \(i + 1) doesn't end the preview", !ended) }
+}
+check("plus: the 5th moment ends the preview and locks", ended && !PlusRules.hasPlus(plus, gatePassed: true))
+check("plus: summary says what Plus did", PlusRules.summary(plus) == ["Got you out the door 3 times", "Got prep started once", "Had your things ready once"],
+      "\(PlusRules.summary(plus))")
+var dup = PlusState()
+(dup, _) = PlusRules.record(PlusMoment(kind: .prepStarted, eventKey: "a", at: at(9, 0)), in: dup)
+(dup, _) = PlusRules.record(PlusMoment(kind: .prepStarted, eventKey: "a", at: at(9, 5)), in: dup)
+check("plus: the same moment on the same event counts once", dup.moments.count == 1)
+var door = plus; door.fakeDoorAt = at(10, 0)
+check("plus: the beta fake door unlocks", PlusRules.hasPlus(door, gatePassed: true))
+check("plus: after the preview, more moments aren't recorded", PlusRules.record(PlusMoment(kind: .alarm, eventKey: "z", at: at(11, 0)), in: plus).0 == plus)
+check("gate: reasons map to screens", IntelligenceGate.from(reason: nil) == .available
+        && IntelligenceGate.from(reason: "appleIntelligenceNotEnabled") == .turnedOff
+        && IntelligenceGate.from(reason: "modelNotReady") == .downloading
+        && IntelligenceGate.from(reason: "deviceNotEligible") == .notEligible)
+check("gate: never sell to a device that fails it", !IntelligenceGate.notEligible.canSellPlus && !IntelligenceGate.turnedOff.canSellPlus
+        && IntelligenceGate.downloading.canSellPlus)
+
 // MARK: Formatting
 
 check("day phrase: same day, tomorrow by part of day, then weekday",

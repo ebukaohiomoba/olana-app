@@ -136,9 +136,12 @@ struct EventSheetView: View {
                 .accessibilityAddTraits(.isHeader)
 
             if s.top.locked {
-                Label("Leave-by and prep timing are part of Plus", systemImage: "lock")
-                    .font(.footnote)
-                    .foregroundStyle(c.muted)
+                Button { PlusStore.shared.showPaywall = true } label: {
+                    Label("Leave-by and prep timing are part of Plus", systemImage: "lock")
+                        .font(.footnote)
+                        .foregroundStyle(c.muted)
+                }
+                .buttonStyle(.plain)
             }
             if let b = s.top.button { topButton(b, gold: s.goldIsTop) }
 
@@ -345,8 +348,15 @@ struct EventSheetView: View {
             .foregroundStyle(c.goldText)
     }
 
+    /// Tapping a locked line opens Plus (PRD v3 §1.11 step 7: on the first locked tap).
     private func lockedLine(_ text: String) -> some View {
-        Text(text).font(.footnote).foregroundStyle(c.muted)
+        Button { PlusStore.shared.showPaywall = true } label: {
+            HStack(spacing: 6) {
+                Text(text).font(.footnote).foregroundStyle(c.muted)
+                Text("See Plus").font(.footnote.weight(.semibold)).foregroundStyle(c.goldText)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var canOpenGoogleMaps: Bool {
@@ -419,9 +429,15 @@ struct EventSheetView: View {
     private func toggle(_ step: String, first: String?) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         update { $0.toggle(step: step, firstStep: first, now: Date()) }
+        if progress.checkedSteps.contains(step) { moment(.prepStarted) }
     }
 
-    private func prepDone() { update { $0.prepDone = true } }
+    private func prepDone() { update { $0.prepDone = true }; moment(.prepStarted) }
+
+    /// A Plus moment the user experienced (PRD v6 §1.10 preview).
+    private func moment(_ kind: PlusMomentKind) {
+        PlusStore.shared.record(kind, eventKey: event.overrideEventKey)
+    }
 
     private func join(_ url: URL) {
         update { $0.joinedAt = Date() }
@@ -432,6 +448,7 @@ struct EventSheetView: View {
 
     private func leave() {
         update { p in p.leftAt = Date() }
+        moment(.leftOnTime)
         // Leaving cancels the pending leave alert and its snoozes, and floor
         // reminders before the start (PRD v6 §3.6, scenario 19).
         Task { await NotificationEngine.shared.cancelNotifications(for: event.id) }

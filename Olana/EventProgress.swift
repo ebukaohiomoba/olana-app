@@ -98,18 +98,18 @@ final class EventProgressStore: @unchecked Sendable {
 
 // MARK: - Plus
 
-/// Whether Plus helpers unlock (PRD v6 §1.10). StoreKit and the preview's five
-/// experienced moments land in M4; until then a debug switch decides.
+/// Whether Plus helpers unlock (PRD v6 §1.10): PlusStore (purchase, beta fake
+/// door, or the five-moment preview). DEBUG builds can force it on or off.
+@MainActor
 enum PlusAccess {
     private static let debugKey = "olanaPlusDebug_v1"
 
     static var hasPlus: Bool {
         #if DEBUG
-        return UserDefaults.standard.object(forKey: debugKey) as? Bool ?? true
-        #else
-        return UserDefaults.standard.bool(forKey: debugKey)
+        if let forced = UserDefaults.standard.object(forKey: debugKey) as? Bool { return forced }
         #endif
+        return PlusStore.shared.hasPlus
     }
 
-    static func setDebug(_ on: Bool) { UserDefaults.standard.set(on, forKey: debugKey) }
+    static func setDebug(_ on: Bool?) { UserDefaults.standard.set(on, forKey: debugKey) }
 }

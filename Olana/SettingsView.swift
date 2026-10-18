@@ -29,7 +29,26 @@ struct SettingsView: View {
 
     // Navigation
     @State private var showingNotificationSettings = false
+    @ObservedObject private var plus = PlusStore.shared
+    @State private var privacyAction: PrivacyAction?
+    @State private var privacyDone: String?
     @State private var showingCalendarSettings = false
+    @EnvironmentObject private var store: EventStore
+
+    private var plusSubtitle: String {
+        if !plus.gate.canSellPlus { return "Needs Apple Intelligence" }
+        if plus.state.purchased || plus.state.fakeDoorAt != nil { return "On" }
+        if plus.inPreview { return "Preview · \(plus.momentsLeft) of \(PlusRules.previewMoments) left" }
+        return "Leave-by, prep and bring list"
+    }
+
+    private func perform(_ a: PrivacyAction) {
+        switch a {
+        case .places: SavedPlaces.home = nil; SavedPlaces.work = nil; privacyDone = "Saved places deleted"
+        case .overrides: store.deleteAllOverrides(); privacyDone = "Event and series settings deleted"
+        case .caches: AssistCache.shared.clear(); EventProgressStore.shared.clear(); privacyDone = "Caches cleared"
+        }
+    }
     
     var body: some View {
         NavigationStack {
@@ -111,6 +130,43 @@ struct SettingsView: View {
                             )
                         }
                         
+                        // MARK: - Olana Plus (PRD v6 §1.10)
+                        SettingsSection(title: "Olana Plus") {
+                            SettingsNavigationRow(
+                                icon: "sparkle",
+                                iconColor: theme.colors.ribbon,
+                                title: "Olana Plus",
+                                subtitle: plusSubtitle,
+                                action: { plus.showPaywall = true }
+                            )
+                        }
+
+                        // MARK: - Privacy (PRD v3 §3.16)
+                        SettingsSection(title: "Privacy") {
+                            ForEach(PrivacyAction.allCases, id: \.self) { action in
+                                SettingsNavigationRow(
+                                    icon: action.icon,
+                                    iconColor: .gray,
+                                    title: action.title,
+                                    subtitle: action.subtitle,
+                                    action: { privacyAction = action }
+                                )
+                            }
+                        }
+                        .confirmationDialog(privacyAction?.title ?? "", isPresented: Binding(
+                            get: { privacyAction != nil }, set: { if !$0 { privacyAction = nil } }),
+                            titleVisibility: .visible) {
+                            if let a = privacyAction {
+                                Button(a.confirm, role: .destructive) { perform(a) }
+                            }
+                        } message: {
+                            Text(privacyAction?.warning ?? "")
+                        }
+                        .alert(privacyDone ?? "", isPresented: Binding(get: { privacyDone != nil },
+                                                                     set: { if !$0 { privacyDone = nil } })) {
+                            Button("OK", role: .cancel) {}
+                        }
+
                         // MARK: - About Olana
                         SettingsSection(title: "About Olana") {
                             SettingsNavigationRow(
@@ -152,6 +208,17 @@ struct SettingsView: View {
 
                         #if DEBUG
                         SettingsSection(title: "Developer") {
+                            Menu {
+                                Button("Plus: real (preview, fake door)") { PlusAccess.setDebug(nil) }
+                                Button("Plus: force on") { PlusAccess.setDebug(true) }
+                                Button("Plus: force off") { PlusAccess.setDebug(false) }
+                                Button("Reset the Plus preview", role: .destructive) { plus.resetForTesting() }
+                            } label: {
+                                Label("Plus testing", systemImage: "sparkle")
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                             NavigationLink {
                                 SpikesView()
                             } label: {
@@ -1091,6 +1158,41 @@ private struct ProfileCard: View {
 }
 
 // MARK: - Settings Section (Unchanged)
+/// Settings › Privacy (PRD v3 §3.16). Telemetry withdrawal arrives with beta telemetry.
+enum PrivacyAction: CaseIterable {
+    case places, overrides, caches
+
+    var title: String {
+        switch self {
+        case .places: return "Delete saved places"
+        case .overrides: return "Delete event and series settings"
+        case .caches: return "Clear caches"
+        }
+    }
+    var subtitle: String {
+        switch self {
+        case .places: return "Home and work"
+        case .overrides: return "Steps, bring lists and help levels you set"
+        case .caches: return "Olana's on-device suggestions and prep progress"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .places: return "mappin.slash"
+        case .overrides: return "slider.horizontal.3"
+        case .caches: return "trash"
+        }
+    }
+    var confirm: String { self == .caches ? "Clear" : "Delete" }
+    var warning: String {
+        switch self {
+        case .places: return "Leave-by times will need home and work again."
+        case .overrides: return "This removes them on all your devices. Your events stay."
+        case .caches: return "Suggestions are worked out again on this phone, which takes a little time."
+        }
+    }
+}
+
 private struct SettingsSection<Content: View>: View {
     @Environment(\.olanaTheme) private var theme
     let title: String

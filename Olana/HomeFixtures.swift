@@ -87,7 +87,13 @@ struct HomeFixtureScreen: View {
     @StateObject private var store = EventStore()
 
     var body: some View {
-        if which == "sheet" || which == "sheet-free" {
+        if which == "paywall" {
+            PlusPaywallView().homePalette()
+        } else if which.hasPrefix("gate-") {
+            // `-homeFixture gate-off`, `gate-none`, `gate-downloading`
+            let gate: IntelligenceGate = which == "gate-off" ? .turnedOff : (which == "gate-none" ? .notEligible : .downloading)
+            IntelligenceGateView(gate: gate) {}.homePalette()
+        } else if which == "sheet" || which == "sheet-free" {
             // `-homeFixture sheet`: the event sheet on a fixed event, Plus on
             // (or off with `sheet-free`), with a fixed EventAssist answer.
             Color.clear

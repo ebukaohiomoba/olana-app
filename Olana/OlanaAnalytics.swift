@@ -67,6 +67,11 @@ enum OlanaAnalytics {
     }
 
     /// User switched to a tab.
+    /// H4 (PRD v6 §1.12): the beta's fake-door "Get Plus" tap. No event data.
+    static func plusIntent(plan: String, momentsUsed: Int) {
+        Analytics.logEvent("plus_intent", parameters: ["plan": plan, "moments_used": momentsUsed])
+    }
+
     static func tabViewed(_ tab: AppTab) {
         Analytics.logEvent("tab_viewed", parameters: [
             "tab_name": tab.analyticsName

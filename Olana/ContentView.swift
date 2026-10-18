@@ -15,6 +15,10 @@ struct ContentView: View {
     @ObservedObject private var calendarDataStore = AppServices.shared.calendarDataStore
     @State private var selectedTab: OlanaTab = .home
     @State private var showingAdd = false
+    @ObservedObject private var plus = PlusStore.shared
+    @ObservedObject private var ai = AIAssistant.shared
+    /// The Apple Intelligence gate is shown once per state (PRD v3 §1.11 step 2).
+    @AppStorage("olanaGateSeen_v1") private var gateSeen = ""
 
     private let tabMap: [OlanaTab: OlanaAnalytics.AppTab] = [
         .home: .home, .calendar: .calendar, .circles: .friends, .settings: .settings
@@ -58,6 +62,16 @@ struct ContentView: View {
                 .presentationDetents([.fraction(0.75), .large])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(24)
+        }
+        .sheet(isPresented: $plus.showPaywall) { PlusPaywallView().homePalette() }
+        .sheet(isPresented: $plus.showSummary, onDismiss: { plus.markSummaryShown() }) {
+            // After the 5th moment: what Plus did, with the price (PRD v6 §1.10).
+            PlusPaywallView().homePalette()
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { plus.gate != .available && gateSeen != "\(plus.gate)" },
+            set: { if !$0 { gateSeen = "\(plus.gate)" } })) {
+            IntelligenceGateView(gate: plus.gate) { gateSeen = "\(plus.gate)" }.homePalette()
         }
         .onChange(of: selectedTab) { _, newTab in
             if let tab = tabMap[newTab] {
