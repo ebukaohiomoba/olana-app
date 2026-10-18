@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct TravelSettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -21,6 +22,7 @@ struct TravelSettingsView: View {
     @State private var prep = ExecPreferences.prepAlerts
     @State private var getReady = ExecPreferences.getReadyAlerts
     @State private var leave = ExecPreferences.leaveAlerts
+    @State private var mapsApp = ExecPreferences.mapsApp
     @State private var searching: Which?
     @State private var query = ""
     @State private var results: [ResolvedPlace] = []
@@ -52,6 +54,12 @@ struct TravelSettingsView: View {
                     Text("Walk").tag(TravelMode.walking)
                     Text("Transit").tag(TravelMode.transit)
                 }
+                if UIApplication.shared.canOpenURL(URL(string: "comgooglemaps://")!) {
+                    Picker("Directions in", selection: $mapsApp) {
+                        Text("Apple Maps").tag("apple")
+                        Text("Google Maps").tag("google")
+                    }
+                }
             }
 
             Section {
@@ -64,6 +72,7 @@ struct TravelSettingsView: View {
         }
         .navigationTitle("Getting there")
         .onChange(of: mode) { _, v in ExecPreferences.defaultMode = v; changed() }
+        .onChange(of: mapsApp) { _, v in ExecPreferences.mapsApp = v }
         .onChange(of: prep) { _, v in ExecPreferences.prepAlerts = v; changed() }
         .onChange(of: getReady) { _, v in ExecPreferences.getReadyAlerts = v; changed() }
         .onChange(of: leave) { _, v in ExecPreferences.leaveAlerts = v; changed() }

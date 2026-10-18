@@ -503,6 +503,7 @@ class NotificationEngine: ObservableObject {
             UNNotificationCategory(identifier: "EXEC_GETREADY", actions: [ok],                         intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "EXEC_LEAVE",    actions: [directions, leaving, fiveMin], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "EXEC_JOIN",     actions: [join],                       intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: "EXEC_HEADSUP",  actions: [open],                       intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "EVENT_LOW",    actions: [markDone, snoozeLow],    intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "EVENT_MEDIUM", actions: [markDone, snoozeMedium], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "EVENT_HIGH",   actions: [markDone, snoozeHigh],   intentIdentifiers: [], options: []),
@@ -853,8 +854,9 @@ class NotificationEngine: ObservableObject {
         content.interruptionLevel  = resolvedInterruptionLevel(for: profile)
         if slot.kind == .exec {
             // Leave, get-ready, prep and join are about a moment, not the event:
-            // time-sensitive so Focus doesn't hold them past it.
-            content.interruptionLevel = .timeSensitive
+            // time-sensitive so Focus doesn't hold them past it. The flight's
+            // evening heads-up is just information.
+            content.interruptionLevel = slot.category == "EXEC_HEADSUP" ? .active : .timeSensitive
             content.sound = .default
         }
         content.userInfo           = [
@@ -1149,7 +1151,7 @@ class NotificationEngine: ObservableObject {
             case .leave, .leaveSnooze: PlusStore.shared.record(.leftOnTime, eventKey: key)
             case .getReady: PlusStore.shared.record(.gotReady, eventKey: key)
             case .prep: PlusStore.shared.record(.prepStarted, eventKey: key)
-            case .join: break
+            case .join, .headsUp: break
             }
         default: break
         }
@@ -1183,6 +1185,11 @@ class NotificationEngine: ObservableObject {
 
     func openDirections(_ event: OlanaEvent, overrides: EffectiveOverrides) {
         guard let place = overrides.place ?? event.resolvedPlace else { return }
+        if ExecPreferences.mapsApp == "google", let g = URL(string: "comgooglemaps://?daddr=\(place.latitude),\(place.longitude)"),
+           UIApplication.shared.canOpenURL(g) {
+            UIApplication.shared.open(g)
+            return
+        }
         var a = URLComponents(string: "https://maps.apple.com/")!
         a.queryItems = [URLQueryItem(name: "daddr", value: "\(place.latitude),\(place.longitude)"),
                         URLQueryItem(name: "q", value: place.name)]

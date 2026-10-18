@@ -35,6 +35,7 @@ struct HomeView: View {
     /// "Which one?" for a "Where is this?" answer with several matches.
     @State private var placeChoice: (event: OlanaEvent, options: [ResolvedPlace])?
     @State private var placeNotFound = false
+    @State private var showGettingThere = false
 
     // Delete confirmation for recurring events
     @State private var pendingDeleteID: UUID?
@@ -146,6 +147,12 @@ struct HomeView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $showGettingThere, onDismiss: { actionTick += 1 }) {
+                NavigationStack {
+                    TravelSettingsView()
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showGettingThere = false } } }
+                }
+            }
             .sheet(item: $editingEvent) { event in
                 EditEventGlassPanel(event: event) { updated in
                     store.updateEvent(
@@ -230,7 +237,8 @@ struct HomeView: View {
             hasUsablePlace: trip.geocodable || trip.roomish || ov.place != nil,
             hasLink: e.meetingURL != nil || trip.attendance == .virtual,
             looksLikeTravel: !e.isTask && (e.likelyNeedsTravel ?? assist?.needsTravel ?? false),
-            travelNotNeeded: ov.travelNotNeeded)
+            travelNotNeeded: ov.travelNotNeeded,
+            needsOrigin: trip.needsTravel && !trip.planTravel && !ExecPreferences.hasSavedOrigin && !ExecPreferences.originAsked)
         return i
     }
 
@@ -269,6 +277,9 @@ struct HomeView: View {
             store.updateOverride(for: e, scope: .series) { $0.assistMode = text == "yes" ? .always : .noAlerts }
         case .whereIsThis:
             answerWhere(e, text ?? "")
+        case .whereFrom:
+            ExecPreferences.originAsked = true
+            if text == "setup" { showGettingThere = true }
         }
         actionTick += 1
     }

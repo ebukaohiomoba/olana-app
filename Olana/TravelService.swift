@@ -41,6 +41,19 @@ enum ExecPreferences {
         get { d.object(forKey: "olanaLeaveAlerts_v1") as? Bool ?? true }
         set { d.set(newValue, forKey: "olanaLeaveAlerts_v1") }
     }
+    /// Directions open here (spec §7.5 "maps app"). Google only when installed.
+    static var mapsApp: String {
+        get { d.string(forKey: "olanaMapsApp_v1") ?? "apple" }
+        set { d.set(newValue, forKey: "olanaMapsApp_v1") }
+    }
+    /// "Where do you leave from?" is asked once on the card (spec §7.5); after
+    /// "Not now" it lives on the sheet and in Settings.
+    static var originAsked: Bool {
+        get { d.bool(forKey: "olanaOriginAsked_v1") }
+        set { d.set(newValue, forKey: "olanaOriginAsked_v1") }
+    }
+    static var hasSavedOrigin: Bool { SavedPlaces.home != nil || SavedPlaces.work != nil }
+
     /// Bumped on any change above, so planVersion changes and alerts are replaced.
     static var version: Int {
         [defaultMode.rawValue, "\(prepAlerts)\(getReadyAlerts)\(leaveAlerts)",
@@ -96,7 +109,7 @@ enum ExecContext {
         // "Not needed" turns travel help off for the series (spec §7.9).
         let noTravel = overrides.travelNotNeeded
         return TripResolver.resolve(TripInputs(
-            start: e.start, end: e.end, isTask: e.isTask, isAllDay: e.isAllDay, location: noTravel ? nil : e.location,
+            title: e.title, start: e.start, end: e.end, isTask: e.isTask, isAllDay: e.isAllDay, location: noTravel ? nil : e.location,
             meetingURL: e.meetingURL ?? facts.meetingURL, assist: assist,
             attendanceAnswer: overrides.attendance,
             attendanceTyped: e.attendanceRaw.flatMap(AssistAttendance.init(rawValue:)),
@@ -141,7 +154,8 @@ enum ExecContext {
                          mode: overrides.assistMode, unranked: e.isUnrankable && overrides.versions == [0, 0],
                          outTheDoorMinutes: trip.outTheDoorMinutes, etaSeconds: eta?.seconds, etaApproximate: eta?.approximate ?? false,
                          travelMode: (overrides.travelMode.flatMap(TravelMode.init(rawValue:)) ?? ExecPreferences.defaultMode),
-                         bring: overrides.bring ?? e.bringItems, progress: EventProgressStore.shared.get(e.overrideEventKey),
+                         bring: overrides.bring ?? e.bringItems, isFlight: trip.isFlight,
+                         arriveEarlyMinutes: trip.arriveEarlyMinutes, progress: EventProgressStore.shared.get(e.overrideEventKey),
                          overrideVersions: overrides.versions)
     }
 

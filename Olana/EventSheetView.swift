@@ -517,7 +517,8 @@ struct EventSheetView: View {
 
     private func directions(google: Bool = false) {
         let (apple, gmaps) = EventSheetBuilder.mapsLinks(sheetInput)
-        if google, let gmaps { openURL(gmaps) } else if let apple { openURL(apple) }
+        let preferGoogle = google || (ExecPreferences.mapsApp == "google" && canOpenGoogleMaps)
+        if preferGoogle, let gmaps { openURL(gmaps) } else if let apple { openURL(apple) }
         // Tapping Directions also starts On the way (PRD v6 §3.6).
         if content.helpers.contains(where: { $0.kind == .leave }) && progress.leftAt == nil { leave() }
     }

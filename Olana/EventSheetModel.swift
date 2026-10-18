@@ -164,7 +164,7 @@ enum EventSheetBuilder {
         let meeting = i.meetingURL ?? i.facts.meetingURL
         let locationKind = result?.locationKind
         let trip = TripResolver.resolve(TripInputs(
-            start: i.start, end: i.end, isTask: i.isTask, location: i.location, meetingURL: meeting, assist: result,
+            title: i.title, start: i.start, end: i.end, isTask: i.isTask, location: i.location, meetingURL: meeting, assist: result,
             attendanceAnswer: i.attendanceAnswer, attendanceTyped: i.attendance, place: i.place, actBy: i.actBy,
             eta: i.eta, arriveEarlyOverride: i.overrides.arriveEarlyMinutes, arriveEarlyTyped: i.arriveEarlyMinutes))
         let times = trip.times

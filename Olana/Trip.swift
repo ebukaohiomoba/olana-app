@@ -19,6 +19,7 @@
 import Foundation
 
 struct TripInputs {
+    var title = ""
     var start: Date
     var end: Date
     var isTask = false
@@ -51,6 +52,8 @@ struct TripFacts {
     var asksAttendance: Bool
     /// Travel over 4 h: "Plan travel", no leave-by.
     var planTravel: Bool
+    /// The model's travel kind, or flight words in the title (spec v3 §9).
+    var isFlight = false
 }
 
 enum TripResolver {
@@ -79,8 +82,11 @@ enum TripResolver {
             && ((i.assist?.needsTravel ?? true) || i.place != nil)
 
         let planTravel = needsTravel && (i.eta.map { ETAFreshness.isPlanTravel($0.seconds) } ?? false)
+        let isFlight = !i.isTask && !i.isAllDay && (i.assist?.kind == .travel || FlightWords.matches(i.title))
+        let modelEarly = i.assist?.source == .model && (i.assist?.arriveEarlyMinutes ?? 0) > 0 ? i.assist?.arriveEarlyMinutes : nil
+        // Flights arrive 60 or 90 early: the model picks, code keeps it at least 60.
         let arriveEarly = i.arriveEarlyOverride ?? i.arriveEarlyTyped
-            ?? (i.assist?.source == .model && (i.assist?.arriveEarlyMinutes ?? 0) > 0 ? i.assist?.arriveEarlyMinutes : nil) ?? 15
+            ?? (isFlight ? max(modelEarly ?? 60, 60) : modelEarly) ?? 15
         let outTheDoor = (i.assist?.source == .model ? i.assist?.outTheDoorMinutes : nil).flatMap { $0 > 0 ? $0 : nil } ?? 5
         let effort = PrepEffort(rawValue: i.assist?.source == .model ? (i.assist?.effortMinutes ?? 0) : 0) ?? .none
 
@@ -91,6 +97,17 @@ enum TripResolver {
             eta: planTravel ? nil : i.eta?.seconds,
             arriveEarly: TimeInterval(arriveEarly * 60), outTheDoor: TimeInterval(outTheDoor * 60), isTask: i.isTask))
         return TripFacts(times: times, attendance: attendance, needsTravel: needsTravel, geocodable: geocodable, roomish: roomish,
-                         arriveEarlyMinutes: arriveEarly, outTheDoorMinutes: outTheDoor, asksAttendance: asks, planTravel: planTravel)
+                         arriveEarlyMinutes: arriveEarly, outTheDoorMinutes: outTheDoor, asksAttendance: asks, planTravel: planTravel,
+                         isFlight: isFlight)
+    }
+}
+
+/// Flight words in a title, the code fact behind the model's travel kind.
+enum FlightWords {
+    private static let pattern = try! NSRegularExpression(
+        pattern: #"\b(flight|flights|flying|fly to|boarding|airport)\b|✈"#, options: [.caseInsensitive])
+
+    static func matches(_ title: String) -> Bool {
+        pattern.firstMatch(in: title, range: NSRange(title.startIndex..., in: title)) != nil
     }
 }

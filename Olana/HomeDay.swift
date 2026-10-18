@@ -114,15 +114,20 @@ enum CardAction: Equatable {
     case inPersonOrOnline
     /// §7.8: refused or placeholder; Yes = Always Assist, No = No Execution Alerts.
     case isImportant
+    /// §7.5: the first trip with a real place and nowhere saved to leave from.
+    /// Set up opens Getting there; Not now asks no more.
+    case whereFrom
 
     /// The question for an event, from what's known (pure, tested in HomeChecks).
     /// Phase actions come first in `HomeDayBuilder.card`; this is the fallback.
     static func question(unranked: Bool, modeChosen: Bool, asksAttendance: Bool, assisted: Bool, start: Date, now: Date,
-                         hasUsablePlace: Bool, hasLink: Bool, looksLikeTravel: Bool, travelNotNeeded: Bool) -> CardAction? {
+                         hasUsablePlace: Bool, hasLink: Bool, looksLikeTravel: Bool, travelNotNeeded: Bool,
+                         needsOrigin: Bool = false) -> CardAction? {
         if unranked && !modeChosen { return .isImportant }
         if asksAttendance { return .inPersonOrOnline }
         if assisted, start > now, start.timeIntervalSince(now) <= 24 * 3600, !hasUsablePlace, !hasLink,
            looksLikeTravel, !travelNotNeeded { return .whereIsThis }
+        if needsOrigin, assisted, start > now, start.timeIntervalSince(now) <= 24 * 3600 { return .whereFrom }
         return nil
     }
 }

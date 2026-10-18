@@ -234,9 +234,9 @@ expect("action: JOIN offers Join", cardOf([execEv("Recruiter screen", callT)], n
 var asking = execEv("Client sync", times(.inPerson, travel: true, eta: 14)); asking.question = .inPersonOrOnline
 expect("action: a waiting question shows when the phase has no action", cardOf([asking], now: at(11, 0))?.action == .inPersonOrOnline)
 func q(unranked: Bool = false, chosen: Bool = false, asks: Bool = false, assisted: Bool = true, start: Date = at(15, 0), now: Date = at(11, 0),
-       place: Bool = false, link: Bool = false, travel: Bool = true, notNeeded: Bool = false) -> CardAction? {
+       place: Bool = false, link: Bool = false, travel: Bool = true, notNeeded: Bool = false, origin: Bool = false) -> CardAction? {
     CardAction.question(unranked: unranked, modeChosen: chosen, asksAttendance: asks, assisted: assisted, start: start, now: now,
-                        hasUsablePlace: place, hasLink: link, looksLikeTravel: travel, travelNotNeeded: notNeeded)
+                        hasUsablePlace: place, hasLink: link, looksLikeTravel: travel, travelNotNeeded: notNeeded, needsOrigin: origin)
 }
 expect("question: unranked asks 'Is this important?' until a mode is chosen", q(unranked: true) == .isImportant && q(unranked: true, chosen: true) == .whereIsThis)
 expect("question: hybrid unsure asks in person or online", q(asks: true) == .inPersonOrOnline)
@@ -244,6 +244,12 @@ expect("question: 'Where is this?' for assisted travel within 24 h with no place
 expect("question: not beyond 24 h, not with a place or link, not for minor, not after 'Not needed' (B14)",
        q(start: at(15, 0, day: 2)) == nil && q(place: true) == nil && q(link: true) == nil && q(assisted: false) == nil
          && q(notNeeded: true) == nil && q(travel: false) == nil)
+
+expect("question: 'Where do you leave from?' for an assisted trip within 24 h with nowhere saved",
+       q(place: true, origin: true) == .whereFrom)
+expect("question: not beyond 24 h, not for minor, and the place question comes first",
+       q(start: at(15, 0, day: 2), place: true, origin: true) == nil && q(assisted: false, place: true, origin: true) == nil
+         && q(origin: true) == .whereIsThis && q(asks: true, place: true, origin: true) == .inPersonOrOnline)
 
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

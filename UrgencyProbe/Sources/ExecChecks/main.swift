@@ -77,8 +77,8 @@ check("eta: cache key rounds to ~100 m and includes mode",
 // MARK: Trip resolver (spec §7.1–7.2)
 
 func assist(_ loc: AssistLocationKind = .streetAddress, travel: Bool = true, att: AssistAttendance? = .inPerson,
-            early: Int = 15, door: Int = 10, effort: Int = 0) -> AssistResult {
-    AssistResult(source: .model, locationKind: loc, kind: .appointment, needsTravel: travel, attendance: att,
+            early: Int = 15, door: Int = 10, effort: Int = 0, kind: AssistKind = .appointment) -> AssistResult {
+    AssistResult(source: .model, locationKind: loc, kind: kind, needsTravel: travel, attendance: att,
                  arriveEarlyMinutes: early, outTheDoorMinutes: door, effortMinutes: effort, helpers: [], steps: [], bring: [],
                  linkLabels: [:], dropped: [], version: 1)
 }
@@ -122,7 +122,7 @@ func ev(_ trip: TripFacts, critical: Bool = true, moderate: Bool = true, mode: A
     ExecEvent(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, title: "Client review", times: trip.times,
               urgencyRaw: 2, critical: critical, moderatePlus: moderate, mode: mode, unranked: unranked,
               outTheDoorMinutes: trip.outTheDoorMinutes, etaSeconds: eta.map { Double($0) * 60 }, travelMode: .walking,
-              bring: bring, progress: progress)
+              bring: bring, isFlight: trip.isFlight, arriveEarlyMinutes: trip.arriveEarlyMinutes, progress: progress)
 }
 let s = ExecSettings()
 let b1Slots = ExecutionPlanner.slots(ev(b1, bring: ["Laptop"]), settings: s, now: at(11, 0), calendar: cal)
@@ -179,6 +179,53 @@ check("quiet: a prep alert moves to the end of quiet hours", moved.first?.fireDa
 let latePrep = TripResolver.resolve(TripInputs(start: at(7, 45), end: at(8, 0), assist: assist(.none, travel: false, att: nil, effort: 60), actBy: at(5, 0)))
 check("quiet: skipped if quiet hours end after deadline − effort",
       ExecutionPlanner.slots(ev(latePrep), settings: quiet, now: at(1, 0), calendar: cal).isEmpty)
+
+// Flights (spec §9): the travel kind or flight words; arrive 60 or 90 early;
+// an evening heads-up the day before when it starts before 10:00.
+func flightTrip(_ title: String = "Flight to Denver", kind: AssistKind = .travel, early: Int = 15, typed: Int? = nil,
+                hour: Int = 7, minute: Int = 30, eta: ETAFreshness.Effective? = .init(seconds: 50 * 60, approximate: false),
+                effort: Int = 0, actBy: Date? = nil) -> TripFacts {
+    TripResolver.resolve(TripInputs(title: title, start: at(hour, minute, day: 1), end: at(hour + 3, 0, day: 1), location: "JFK T4",
+                                    assist: assist(.namedPlace, early: early, door: 10, effort: effort, kind: kind),
+                                    place: place("JFK"), actBy: actBy, eta: eta, arriveEarlyTyped: typed))
+}
+check("flight: the model's travel kind", flightTrip("Trip home", kind: .travel).isFlight)
+check("flight: flight words in the title without the kind", flightTrip("UA 512 flight to SFO", kind: .other).isFlight
+      && flightTrip("Head to the airport", kind: .other).isFlight && flightTrip("✈ Lisbon", kind: .other).isFlight)
+check("flight: not a flight", !flightTrip("Team standup", kind: .inPersonMeeting).isFlight
+      && !flightTrip("Inflight magazine review", kind: .other).isFlight)
+let notFlightTask = TripResolver.resolve(TripInputs(title: "Book flight", start: at(9, 0), end: at(9, 30), isTask: true))
+check("flight: a task is never a flight", !notFlightTask.isFlight)
+check("flight: arrive early at least 60", flightTrip(early: 15).arriveEarlyMinutes == 60 && flightTrip(early: 90).arriveEarlyMinutes == 90)
+check("flight: the user's typed arrive-early wins", flightTrip(early: 90, typed: 30).arriveEarlyMinutes == 30)
+let fl = flightTrip()
+check("flight: leave-by 7:30 − 60 − 50 = 5:40", fl.times.leaveBy == at(5, 40, day: 1), "\(String(describing: fl.times.leaveBy))")
+
+let flSlots = ExecutionPlanner.slots(ev(fl, eta: 50), settings: s, now: at(11, 0), calendar: cal)
+let headsUp = flSlots.first { AlertID.parseExec($0.id)?.kind == .headsUp }
+check("heads-up: 20:00 the evening before", headsUp?.fireDate == at(20, 0), "\(flSlots.map { ($0.fireDate, $0.body) })")
+check("heads-up: copy with leave-by", headsUp?.body == "Tomorrow at 7:30 · leave by 5:40", "\(String(describing: headsUp?.body))")
+check("heads-up: plain, not a moment", headsUp?.category == "EXEC_HEADSUP" && headsUp.map { AlertID.isPlannedExec($0.id) } == true)
+check("heads-up: get-ready and leave still planned", flSlots.count == 3)
+let flNoETA = flightTrip(eta: nil)
+check("heads-up: no leave-by yet says when to be there",
+      ExecutionPlanner.slots(ev(flNoETA, eta: nil), settings: s, now: at(11, 0), calendar: cal).first?.body == "Tomorrow at 7:30 · be there by 6:30")
+var quietEarly = s; quietEarly.quiet = QuietHours(startHour: 19, endHour: 7)
+check("heads-up: an hour before quiet hours start",
+      ExecutionPlanner.slots(ev(fl, eta: 50), settings: quietEarly, now: at(11, 0), calendar: cal).contains { $0.fireDate == at(18, 0) && $0.category == "EXEC_HEADSUP" })
+check("heads-up: not for a flight at 10:00 or later",
+      !ExecutionPlanner.slots(ev(flightTrip(hour: 10, minute: 0), eta: 50), settings: s, now: at(11, 0), calendar: cal).contains { $0.category == "EXEC_HEADSUP" })
+check("heads-up: not for other early events",
+      !ExecutionPlanner.slots(ev(flightTrip("Gym", kind: .workout), eta: 50), settings: s, now: at(11, 0), calendar: cal).contains { $0.category == "EXEC_HEADSUP" })
+check("heads-up: Plus only", ExecutionPlanner.slots(ev(fl, eta: 50), settings: noPlus, now: at(11, 0), calendar: cal).isEmpty)
+check("heads-up: not once the evening has passed",
+      !ExecutionPlanner.slots(ev(fl, eta: 50), settings: s, now: at(20, 30), calendar: cal).contains { $0.category == "EXEC_HEADSUP" })
+check("heads-up: Moderate+ below Critical still gets it",
+      ExecutionPlanner.slots(ev(fl, critical: false, eta: 50), settings: s, now: at(11, 0), calendar: cal).contains { $0.category == "EXEC_HEADSUP" })
+let flPrep = flightTrip(effort: 60, actBy: at(3, 0, day: 1))
+let flPrepSlots = ExecutionPlanner.slots(ev(flPrep, eta: 50), settings: s, now: at(11, 0), calendar: cal)
+check("max 3: get-ready goes first when a flight has prep",
+      flPrepSlots.compactMap { AlertID.parseExec($0.id)?.kind } == [.prep, .leave, .headsUp], "\(flPrepSlots.map(\.id))")
 
 // B10, B11: ETA lost, I'm leaving.
 let lost = TripResolver.resolve(TripInputs(start: at(15, 0), end: at(16, 0), location: "x", assist: assist(), place: place("Acme"), eta: nil))

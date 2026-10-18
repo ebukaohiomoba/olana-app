@@ -94,6 +94,13 @@ enum HomeFixtures {
         return HomeDayBuilder.build(inputs: [dentist, input("Gym", at(19, 0), at(20, 0), .low)], now: at(18, 0), bed: at(22, 0))
     }
 
+    /// M1-C: the first trip with a place, and no home or work saved yet.
+    static func fromDay() -> HomeDay {
+        var dentist = input("Dentist", at(9, 0, dayOffset: 1), at(10, 0, dayOffset: 1), .medium)
+        dentist.question = .whereFrom
+        return HomeDayBuilder.build(inputs: [dentist, input("Gym", at(19, 0), at(20, 0), .low)], now: at(18, 0), bed: at(22, 0))
+    }
+
     /// Saturday with nothing on it; the next thing that matters is Thursday.
     static func emptyDay() -> HomeDay {
         let review = input("Quarterly review", at(9, 0, dayOffset: 2), at(10, 0, dayOffset: 2), .high, prepHours: 2)
@@ -137,7 +144,8 @@ struct HomeFixtureScreen: View {
     private var home: some View {
         let day = which == "empty" ? HomeFixtures.emptyDay()
             : which == "leave" ? HomeFixtures.leaveDay()
-            : which == "where" ? HomeFixtures.whereDay() : HomeFixtures.fullDay()
+            : which == "where" ? HomeFixtures.whereDay()
+            : which == "from" ? HomeFixtures.fromDay() : HomeFixtures.fullDay()
         ScreenBody(day: day, tab: $tab)
             .homePalette()
     }

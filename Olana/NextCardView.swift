@@ -119,6 +119,13 @@ struct CardActionRow: View {
                 pill("Yes") { onAction(.isImportant, "yes") }
                 pill("No") { onAction(.isImportant, "no") }
             }
+        case .whereFrom:
+            HStack(spacing: 8) {
+                Text("Where do you leave from?").font(.footnote).foregroundStyle(c.muted)
+                Spacer()
+                pill("Set up") { onAction(.whereFrom, "setup") }
+                pill("Not now") { onAction(.whereFrom, "later") }
+            }
         case .whereIsThis:
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {

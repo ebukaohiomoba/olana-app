@@ -17,8 +17,9 @@ import Foundation
 
 /// Spec §5.2 lists prep, getReady, leave and leaveSnooze. PRD §3.9 also has a
 /// Join alert (start − 1 min, Critical only); the PRD wins, so join is here.
+/// headsUp is the flight's evening-before alert (spec v3 §9).
 enum ExecKind: String, CaseIterable, Codable {
-    case prep, getReady, leave, leaveSnooze, join
+    case prep, getReady, leave, leaveSnooze, join, headsUp
 }
 
 extension AlertID {

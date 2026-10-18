@@ -18,6 +18,11 @@
 //  deadline − effort); get-ready is skipped; leave is skipped unless Critical;
 //  join fires (Critical only).
 //
+//  Flights starting before 10:00 get a heads-up the evening before (spec v3
+//  §9) at 20:00, or an hour before quiet hours start. It's Plus, plain (not
+//  time-sensitive), and when an event has more than 3 alerts get-ready goes
+//  first, then prep.
+//
 
 import Foundation
 
@@ -66,6 +71,8 @@ struct ExecEvent {
     var etaApproximate = false
     var travelMode: TravelMode = .driving
     var bring: [String] = []
+    var isFlight = false
+    var arriveEarlyMinutes = 15
     var progress = EventProgress()
     var overrideVersions: [Int] = []
 }
@@ -73,6 +80,8 @@ struct ExecEvent {
 enum ExecutionPlanner {
     static let maxLeaveSnoozes = 2
     static let leaveSnoozeMinutes = 5
+    static let headsUpHour = 20
+    static let headsUpBeforeHour = 10
 
     enum Allowed: Equatable { case none, travelOnly, all }
 
@@ -146,7 +155,37 @@ enum ExecutionPlanner {
                 out.append(slot(.join, fire, "\(e.title) starts in 1 min", "EXEC_JOIN", index: 2))
             }
         }
+
+        if s.hasPlus, e.isFlight, let fire = headsUpTime(e, settings: s, calendar: calendar), fire > now {
+            let at = ExecFormat.clock(t.start, calendar)
+            let about = e.etaApproximate ? "about " : ""
+            let body = t.leaveBy.map { "Tomorrow at \(at) · leave by \(about)\(ExecFormat.clock($0, calendar))" }
+                ?? "Tomorrow at \(at) · be there by \(ExecFormat.clock(t.start.addingTimeInterval(-TimeInterval(e.arriveEarlyMinutes * 60)), calendar))"
+            out.append(slot(.headsUp, fire, body, "EXEC_HEADSUP", index: 3))
+        }
+
+        // At most 3 per event: get-ready goes first, then prep.
+        for drop in [ExecKind.getReady, .prep] where out.count > 3 {
+            out.removeAll { AlertID.parseExec($0.id)?.kind == drop }
+        }
         return Array(out.prefix(3))
+    }
+
+    /// The evening before an early flight: 20:00, or an hour before quiet
+    /// hours start. nil when the flight starts at 10:00 or later, or when
+    /// that time isn't safely before leaving.
+    static func headsUpTime(_ e: ExecEvent, settings s: ExecSettings, calendar: Calendar) -> Date? {
+        let t = e.times
+        guard calendar.component(.hour, from: t.start) < headsUpBeforeHour,
+              let dayBefore = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: t.start)) else { return nil }
+        var hour = headsUpHour
+        if let q = s.quiet, q.contains(calendar.date(bySettingHour: hour, minute: 0, second: 0, of: dayBefore)!, calendar: calendar) {
+            hour = q.startHour - 1
+        }
+        guard hour >= 12, let fire = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: dayBefore),
+              !(s.quiet?.contains(fire, calendar: calendar) ?? false),
+              fire.addingTimeInterval(3600) <= (t.getReadyAt ?? t.leaveBy ?? t.start) else { return nil }
+        return fire
     }
 
     /// "5 min" on a leave alert: once more with recomputed lateness, at most
