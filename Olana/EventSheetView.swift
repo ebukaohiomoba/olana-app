@@ -34,6 +34,7 @@ struct EventSheetView: View {
     @State private var newItem = ""
     @State private var scopeAsk: (() -> Void)?
     @State private var pendingScopeChange: ((OverrideScope) -> Void)?
+    @State private var showingTravel = false
 
     enum ListKind: Identifiable { case steps, bring; var id: Self { self } }
 
@@ -100,6 +101,9 @@ struct EventSheetView: View {
             }
         }
         .sheet(item: $editingList) { kind in listEditor(kind) }
+        .sheet(isPresented: $showingTravel, onDismiss: { Task { await refreshTrip() } }) {
+            NavigationStack { TravelSettingsView() }
+        }
         .confirmationDialog("Save for", isPresented: Binding(get: { pendingScopeChange != nil },
                                                                set: { if !$0 { pendingScopeChange = nil } })) {
             Button("This event") { pendingScopeChange?(.event); pendingScopeChange = nil }
@@ -109,6 +113,11 @@ struct EventSheetView: View {
 
     // MARK: Load
 
+    private func refreshTrip() async {
+        await TravelService.shared.refresh(event, events: store.events, overrides: overrides)
+        now = Date()
+    }
+
     private func load() async {
         overrides = store.effectiveOverrides(for: event)
         progress = EventProgressStore.shared.get(event.overrideEventKey)
@@ -116,6 +125,11 @@ struct EventSheetView: View {
                                 facts: facts, savedSteps: overrides.steps ?? [], overrideVersions: overrides.versions)
         if let fixtureOutcome { outcome = fixtureOutcome; return }
         outcome = await EventAssistService.shared.assist(input)
+        // Sheet open is the top ModelQueue priority: resolve the place and
+        // fetch an ETA now so leave-by shows without waiting for a refresh.
+        if case .full(let r)? = outcome { await TravelService.shared.ensurePlace(event, kind: r.locationKind) }
+        if case .basic(let r)? = outcome { await TravelService.shared.ensurePlace(event, kind: r.locationKind) }
+        await refreshTrip()
     }
 
     // MARK: Header and top action
@@ -262,10 +276,40 @@ struct EventSheetView: View {
         case .leave(let l):
             section("Leave", locked: l.locked) {
                 if let line = l.line { Text(line).font(.subheadline.weight(.medium)).foregroundStyle(c.text) }
+                if !l.locked, let from = ETAStore.shared.get(event.overrideEventKey)?.originName {
+                    // Origin correction (spec §7.5), saved for this event.
+                    Menu {
+                        Button("Home") { setOrigin("home") }.disabled(SavedPlaces.home == nil)
+                        Button("Work") { setOrigin("work") }.disabled(SavedPlaces.work == nil)
+                        Button("Current location") { setOrigin("current") }
+                        Button("Automatic") { setOrigin(nil) }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("from \(from)").font(.footnote).foregroundStyle(c.muted)
+                            Image(systemName: "chevron.down").font(.caption2).foregroundStyle(c.faint)
+                        }
+                    }
+                }
                 if l.locked { lockedLine("Leave-by timing is part of Plus") }
+                // Just in time (spec §7.5): nowhere to leave from yet.
+                if !l.locked, l.line == nil, SavedPlaces.home == nil, SavedPlaces.work == nil {
+                    Button { showingTravel = true } label: {
+                        Label("Set where you leave from", systemImage: "house").font(.subheadline)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(c.goldText)
+                }
                 HStack(spacing: 16) {
                     if l.appleMaps != nil { link("Apple Maps", icon: "map") { directions(google: false) } }
                     if l.googleMaps != nil, canOpenGoogleMaps { link("Google Maps", icon: "map.fill") { directions(google: true) } }
+                }
+                if l.line != nil {
+                    Button(progress.wrongLeaveByReportedAt == nil ? "This is wrong" : "Thanks, noted") {
+                        update { $0.wrongLeaveByReportedAt = Date() }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(c.faint)
+                    .disabled(progress.wrongLeaveByReportedAt != nil)
                 }
             }
         }
@@ -420,6 +464,17 @@ struct EventSheetView: View {
     }
 
     private func setMode(_ m: AssistMode) { save { $0.assistMode = m } }
+
+    /// Origin correction applies to this occurrence only (B15).
+    private func setOrigin(_ origin: String?) {
+        store.updateOverride(for: event, scope: .event) { $0.origin = origin }
+        overrides = store.effectiveOverrides(for: event)
+        Task {
+            await TravelService.shared.refresh(event, events: store.events, overrides: overrides, force: true)
+            now = Date()
+            NotificationEngine.shared.requestReplan("origin")
+        }
+    }
 
     // MARK: Actions
 

@@ -179,14 +179,15 @@ final class TravelService {
 
     /// Fetch an ETA when the reading is stale for its tier; keep the last good one otherwise.
     @discardableResult
-    func refresh(_ e: OlanaEvent, events: [OlanaEvent], overrides: EffectiveOverrides, now: Date = Date()) async -> ETAReading? {
+    func refresh(_ e: OlanaEvent, events: [OlanaEvent], overrides: EffectiveOverrides, now: Date = Date(),
+                 force: Bool = false) async -> ETAReading? {
         guard let place = overrides.place ?? e.resolvedPlace, !overrides.travelNotNeeded, !e.isTask, !e.isAllDay, e.start > now
         else { return nil }
         let key = e.overrideEventKey
         let stored = ETAStore.shared.get(key)
         let trip = ExecContext.trip(for: e, overrides: overrides, now: now)
         guard trip.needsTravel else { return nil }
-        guard ETAFreshness.needsRefresh(stored?.reading, leaveBy: trip.times.leaveBy, now: now) else { return stored?.reading }
+        guard force || ETAFreshness.needsRefresh(stored?.reading, leaveBy: trip.times.leaveBy, now: now) else { return stored?.reading }
         guard let origin = await origin(for: e, events: events, overrides: overrides) else { return stored?.reading }
         let mode = overrides.travelMode.flatMap(TravelMode.init(rawValue:)) ?? ExecPreferences.defaultMode
         let cacheKey = ETAFreshness.cacheKey(from: origin.coordinate, to: place.coordinate, mode: mode)

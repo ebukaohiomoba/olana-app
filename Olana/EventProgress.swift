@@ -25,6 +25,8 @@ struct EventProgress: Codable, Equatable {
     var eventStart: Date?
     /// Leave alert "5 min" taps so far (at most two, spec §7.7).
     var leaveSnoozes: Int?
+    /// "This is wrong" on the leave-by (spec §10 metric), with the time shown.
+    var wrongLeaveByReportedAt: Date?
 
     var onTheWay: Bool { leftAt != nil && arrivedAt == nil }
     var finished: Bool { arrivedAt != nil || joinedAt != nil }

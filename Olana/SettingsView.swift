@@ -32,6 +32,7 @@ struct SettingsView: View {
     @ObservedObject private var plus = PlusStore.shared
     @State private var privacyAction: PrivacyAction?
     @State private var privacyDone: String?
+    @State private var showingTravel = false
     @State private var showingCalendarSettings = false
     @EnvironmentObject private var store: EventStore
 
@@ -130,6 +131,18 @@ struct SettingsView: View {
                             )
                         }
                         
+                        // MARK: - Getting there (spec v3 §7.5, §7.7)
+                        SettingsSection(title: "Getting there") {
+                            SettingsNavigationRow(
+                                icon: "figure.walk",
+                                iconColor: theme.colors.ribbon,
+                                title: "Getting there",
+                                subtitle: SavedPlaces.home == nil ? "Set home for leave-by times" : "Home, work and alerts",
+                                action: { showingTravel = true }
+                            )
+                        }
+                        .sheet(isPresented: $showingTravel) { NavigationStack { TravelSettingsView() } }
+
                         // MARK: - Olana Plus (PRD v6 §1.10)
                         SettingsSection(title: "Olana Plus") {
                             SettingsNavigationRow(
