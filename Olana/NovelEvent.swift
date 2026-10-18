@@ -112,6 +112,34 @@ public final class OlanaEvent {
     /// from Google: the id of the copy that's kept. Hidden, not deleted.
     public var duplicateOf: UUID? = nil
 
+    // MARK: - Event input (PRD v6 §1.7a, §3.11)
+    // From the add-box message for native events. Optional with defaults so
+    // lightweight migration keeps working. `location` and `notes` above are
+    // reused: the place words and the original message.
+    /// Join link: from the message (native) or the invite (synced, M1-C).
+    public var meetingURLString: String? = nil
+    /// Things to do first, one per line, in the user's words.
+    public var prepItemsText: String? = nil
+    /// Things to bring, one per line, in the user's words.
+    public var bringItemsText: String? = nil
+    /// From "be there 15 min early" or the arrive-early bucket. Capped 0 to 180.
+    public var arriveEarlyMinutes: Int? = nil
+    /// Where `location` came from: "typed", "calendar" or "asked" (Where is this?).
+    public var placeSource: String? = nil
+    /// "inPerson", "virtual" or "unsure", from the message or the user.
+    public var attendanceRaw: String? = nil
+    /// The model thought this needs travel (drives "Where is this?").
+    public var likelyNeedsTravel: Bool? = nil
+
+    // MARK: - Resolved place (PRD v6 §3.4a step 6)
+    // Filled when MapKit finds exactly one match, or the user picks one.
+    public var placeName: String? = nil
+    public var placeAddress: String? = nil
+    public var placeLatitude: Double? = nil
+    public var placeLongitude: Double? = nil
+    public var placePhone: String? = nil
+    public var placeWebsite: String? = nil
+
     // MARK: - Cached semantics (Option 5)
     // Stable properties of the event, extracted once and never recomputed. All
     // optional with defaults so lightweight SwiftData migration keeps working.
@@ -144,6 +172,27 @@ public final class OlanaEvent {
     /// The effective urgency: user override takes precedence over auto-assigned urgency.
     public var effectiveUrgency: EventUrgency {
         urgencyOverrideRaw.flatMap { EventUrgency(rawValue: $0) } ?? urgency
+    }
+
+    public var meetingURL: URL? { meetingURLString.flatMap(URL.init(string:)).flatMap(URLGuard.validate) }
+    public var prepItems: [String] { Self.lines(prepItemsText) }
+    public var bringItems: [String] { Self.lines(bringItemsText) }
+    public var hasResolvedPlace: Bool { placeLatitude != nil && placeLongitude != nil }
+
+    static func lines(_ s: String?) -> [String] {
+        (s ?? "").components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// Copies what the add-box message gave (§1.7a) onto this event.
+    func applyCapture(_ c: CaptureResult, message: String) {
+        notes = message
+        if let place = c.placeText { location = place; placeSource = "typed" }
+        meetingURLString = c.meetingURL?.absoluteString
+        prepItemsText = c.steps.isEmpty ? nil : c.steps.joined(separator: "\n")
+        bringItemsText = c.bring.isEmpty ? nil : c.bring.joined(separator: "\n")
+        arriveEarlyMinutes = c.arriveEarlyMinutes
+        attendanceRaw = c.attendance?.rawValue
+        likelyNeedsTravel = c.likelyNeedsTravel
     }
 
     /// Whether this event was imported from an external calendar.
@@ -183,5 +232,24 @@ public final class OlanaEvent {
         self.calendarName       = calendarName
         self.calendarColorHex   = calendarColorHex
         self.isTask             = isTask
+    }
+}
+
+// MARK: - Resolved place
+
+extension OlanaEvent {
+    func applyPlace(_ p: ResolvedPlace) {
+        placeName = p.name
+        placeAddress = p.address
+        placeLatitude = p.latitude
+        placeLongitude = p.longitude
+        placePhone = p.phone
+        placeWebsite = p.website
+    }
+
+    var resolvedPlace: ResolvedPlace? {
+        guard let placeLatitude, let placeLongitude else { return nil }
+        return ResolvedPlace(name: placeName ?? location ?? "Place", address: placeAddress, latitude: placeLatitude,
+                             longitude: placeLongitude, phone: placePhone, website: placeWebsite)
     }
 }

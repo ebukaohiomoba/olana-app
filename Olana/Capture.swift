@@ -355,6 +355,49 @@ enum CaptureCode {
     }
 }
 
+// MARK: - Review-step draft (the chips' state)
+
+/// One chip, identified by what it carries so removal is stable.
+enum CaptureChipID: Hashable {
+    case place, link, early
+    case bring(String), step(String)
+}
+
+struct CaptureDraft: Equatable {
+    var result = CaptureResult()
+    var removed: Set<CaptureChipID> = []
+    var match: PlaceMatch?
+    var picked: ResolvedPlace?
+    /// The message text the result was read from (corrections append to it).
+    var message = ""
+
+    /// The capture with removed chips taken out: what gets saved.
+    var effective: CaptureResult {
+        var r = result
+        if removed.contains(.place) { r.placeText = nil; r.placeIsStreetAddress = false }
+        if removed.contains(.link) { r.meetingURL = nil; r.meetingService = nil
+            if r.attendance == .virtual && r.placeText == nil { r.attendance = nil } }
+        if removed.contains(.early) { r.arriveEarlyText = nil; r.arriveEarlyMinutes = nil }
+        r.items = r.items.filter { !removed.contains($0.isBring ? .bring($0.text) : .step($0.text)) }
+        return r
+    }
+
+    /// The place to save: picked from "Which one?", or the single match.
+    var place: ResolvedPlace? {
+        guard !removed.contains(.place), result.placeText != nil else { return nil }
+        if let picked { return picked }
+        if case .resolved(let p)? = match { return p }
+        return nil
+    }
+
+    /// Show "Where is it? (optional)": no place, no link, and it looks in person.
+    func asksWhere(isTask: Bool) -> Bool {
+        let e = effective
+        return !isTask && e.placeText == nil && e.meetingURL == nil && e.attendance != .virtual
+            && (e.likelyNeedsTravel || e.attendance == .inPerson)
+    }
+}
+
 // MARK: - Model call
 
 enum CaptureParser {

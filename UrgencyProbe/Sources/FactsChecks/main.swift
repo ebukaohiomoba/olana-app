@@ -173,5 +173,37 @@ check("guard: digits, time words and long items dropped; duplicates and blanks i
 check("guard: words containing a time word inside are fine", TextGuard.passes("Pick up the daycare forms"))
 check("guard: 'am' as a word is dropped", !TextGuard.passes("Arrive 7 am"))
 
+// MARK: Places (PRD v6 §3.4a step 6, §3.14)
+
+import CoreLocation
+func place(_ name: String, _ lat: Double, _ lon: Double) -> ResolvedPlace {
+    ResolvedPlace(name: name, address: nil, latitude: lat, longitude: lon, phone: nil, website: nil)
+}
+let soho = CLLocationCoordinate2D(latitude: 40.7233, longitude: -74.0030)          // origin, Manhattan
+let smileA = place("Smile Dental", 40.7306, -73.9866)                              // ~1.6 km
+let smileB = place("Smile Dental", 40.6782, -73.9442)                              // Brooklyn, ~7 km
+let smileFar = place("Smile Dental", 34.0522, -118.2437)                           // Los Angeles
+check("places: one match nearby is resolved",
+      PlaceMatching.decide(words: "Smile Dental", results: [smileA, smileFar], origin: soho) == .resolved(smileA))
+check("places: two within 25 km ask which one, nearest first",
+      PlaceMatching.decide(words: "Smile Dental", results: [smileB, smileA, smileFar], origin: soho) == .choose([smileA, smileB]))
+check("places: one far match is taken (another city)",
+      PlaceMatching.decide(words: "1 Main St, Austin", results: [smileFar], origin: soho) == .resolved(smileFar))
+check("places: no results leaves the words", PlaceMatching.decide(words: "Zzyzx", results: [], origin: soho) == .none)
+check("places: personal places are never geocoded",
+      ["mom's", "my place", "the usual", "Sara's place", "TBD"].allSatisfy {
+          PlaceMatching.decide(words: $0, results: [smileA], origin: soho) == .personal })
+check("places: 'home' uses the saved home, 'work' the saved work",
+      PlaceMatching.decide(words: "home", results: [], origin: soho, home: smileB) == .resolved(smileB)
+        && PlaceMatching.decide(words: "work", results: [], origin: soho, work: smileA) == .resolved(smileA))
+check("places: 'work' with nothing saved is personal, never searched",
+      PlaceMatching.decide(words: "work", results: [smileA], origin: soho) == .personal)
+check("places: a business name with 's is not personal", !PlaceMatching.isPersonal("Joe's Pizza on Bleecker")
+        && !PlaceMatching.isPersonal("McDonald's Times Square"))
+check("places: distance is about right", abs(PlaceMatching.km(soho, smileB.coordinate) - 6.9) < 0.6,
+      "\(PlaceMatching.km(soho, smileB.coordinate))")
+check("places: no origin, several results is a choice",
+      PlaceMatching.decide(words: "Starbucks", results: [smileA, smileB], origin: nil) == .choose([smileA, smileB]))
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -181,8 +181,22 @@ final class EventStore: ObservableObject {
     func addEvent(title: String, start: Date, end: Date, urgency: EventUrgency,
                   recurrenceRule: RecurrenceRule = .none, isTask: Bool = false,
                   semantics: EventSemantics? = nil,
-                  userPickedUrgency: Bool = false) {
+                  userPickedUrgency: Bool = false,
+                  capture: CaptureResult? = nil, message: String? = nil,
+                  place: ResolvedPlace? = nil) {
         let new = OlanaEvent(title: title, start: start, end: end, urgency: urgency, recurrenceRule: recurrenceRule, isTask: isTask)
+        // What the message said besides the time (PRD v6 §3.11). Tasks never
+        // take a place or travel (§1.7a).
+        func applyInput(_ e: OlanaEvent) {
+            if let capture, let message {
+                e.applyCapture(capture, message: message)
+                if isTask { e.location = nil; e.placeSource = nil; e.likelyNeedsTravel = false }
+            } else if let message {
+                e.notes = message
+            }
+            if let place, !isTask { e.applyPlace(place) }
+        }
+        applyInput(new)
 
         // If the user chose an urgency, that is the answer. Stored as an override
         // before semantics are applied, so neither this nor a later backfill can
@@ -193,6 +207,7 @@ final class EventStore: ObservableObject {
         context.insert(new)
         if recurrenceRule != .none {
             for occurrence in generateOccurrences(from: new, rule: recurrenceRule) {
+                applyInput(occurrence)
                 if userPickedUrgency { occurrence.urgencyOverrideRaw = urgency.rawValue }
                 if let semantics { occurrence.applySemantics(semantics) }
                 context.insert(occurrence)

@@ -204,5 +204,28 @@ check("the place loses its 'at'", lead.placeText == "the tipsy cow", "\(lead)")
 let eventItem = CaptureCode.combine(message: "pick up keys 22 oak ave 5pm", title: "Pick up keys", model: CaptureModelOutput(prepItems: ["pick up keys"]))
 check("the event itself is never an item", eventItem.items.isEmpty)
 
+// MARK: Review-step draft
+
+var draft = CaptureDraft(result: r1, message: m1)
+draft.removed.insert(.bring("Insurance card"))
+check("draft: a removed chip is not saved", draft.effective.bring.isEmpty && draft.effective.placeText == "Smile Dental")
+draft.removed.insert(.place)
+check("draft: removing the place drops place and its match", draft.effective.placeText == nil && draft.place == nil)
+let dental = ResolvedPlace(name: "Smile Dental", address: "1 Main St", latitude: 40.7, longitude: -74, phone: nil, website: nil)
+var picking = CaptureDraft(result: r1, match: .choose([dental, dental]), message: m1)
+check("draft: several matches save no place until one is picked", picking.place == nil)
+picking.picked = dental
+check("draft: the picked place is saved", picking.place == dental)
+check("draft: a single match is saved", CaptureDraft(result: r1, match: .resolved(dental), message: m1).place == dental)
+var linkDraft = CaptureDraft(result: rz, message: zoomMsg)
+linkDraft.removed.insert(.link)
+check("draft: removing the link drops virtual attendance", linkDraft.effective.meetingURL == nil && linkDraft.effective.attendance == nil)
+let noPlace = CaptureCode.combine(message: "dentist tomorrow 3pm", title: "Dentist",
+                                  model: CaptureModelOutput(attendance: .inPerson, likelyNeedsTravel: true))
+check("draft: in person with no place asks 'Where is it?'", CaptureDraft(result: noPlace).asksWhere(isTask: false))
+check("draft: tasks never ask", !CaptureDraft(result: noPlace).asksWhere(isTask: true))
+check("draft: virtual never asks", !CaptureDraft(result: rz).asksWhere(isTask: false))
+check("draft: a place already given never asks", !CaptureDraft(result: r1).asksWhere(isTask: false))
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

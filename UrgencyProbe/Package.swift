@@ -63,7 +63,14 @@ let package = Package(
         .executableTarget(
             name: "FactsChecks",
             path: "Sources/FactsChecks",
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [
+                // Capture.swift (for its text helpers) brings FoundationModels.
+                .swiftLanguageMode(.v5),
+                .unsafeFlags([
+                    "-plugin-path",
+                    "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins"
+                ])
+            ]
         ),
         .executableTarget(
             name: "CaptureChecks",

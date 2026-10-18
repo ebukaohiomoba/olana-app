@@ -37,6 +37,11 @@ struct AddEventView: View {
     @State private var editedTitle: String = ""
     @State private var selectedRecurrence: RecurrenceRule = .none
     @State private var analysisTask: Task<Void, Never>?
+    /// What the message said besides the time (PRD v6 §1.7a): read-back chips.
+    @State private var captureDraft = CaptureDraft()
+    /// The title before chip words are taken out; chips come and go against it.
+    @State private var captureBaseTitle = ""
+    @State private var placeholderIndex = 0
 
     // ── Olu ───────────────────────────────────────────────────────────
     @State private var oluState: OluState = .idle
@@ -61,6 +66,14 @@ struct AddEventView: View {
     @FocusState private var isTextFieldFocused: Bool
 
     enum AddEventStep { case input, review }
+
+    /// N2: full messages, so people learn they can say more.
+    private static let placeholders = [
+        "Dentist tomorrow 3pm at Smile Dental, bring insurance card",
+        "Interview Thursday 10am on Zoom, review my portfolio first",
+        "Gym 6pm at Equinox Flatiron",
+        "Flight Friday 7:30am from JFK T4, be there 2 hours early",
+    ]
 
     // ── Quick-date: today + next 6 days ──────────────────────────────
     private var quickDates: [(label: String, date: Date)] {
@@ -109,6 +122,30 @@ struct AddEventView: View {
             }
         }
         .onAppear { isTextFieldFocused = (currentStep == .input) }
+        .task {
+            // Rotate the example while the box is empty.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                if eventText.isEmpty {
+                    withAnimation(.easeInOut(duration: 0.3)) { placeholderIndex = (placeholderIndex + 1) % Self.placeholders.count }
+                }
+            }
+        }
+        .onChange(of: captureDraft) { _, draft in
+            // A chip removed or corrected: rebuild the title from the chips still on.
+            guard !captureBaseTitle.isEmpty else { return }
+            editedTitle = CaptureCode.title(captureBaseTitle,
+                                            removing: CaptureCode.chipPhrases(draft.effective, message: draft.message))
+        }
+    }
+
+    /// Step 6 of §3.4a, after the review step is showing: MapKit near the origin.
+    private func resolvePlace(_ words: String) {
+        guard isEventMode else { return }
+        Task {
+            let match = await PlaceResolver.shared.resolve(words)
+            if captureDraft.result.placeText == words { captureDraft.match = match }
+        }
     }
 
     // MARK: - Step Bar
@@ -193,7 +230,7 @@ struct AddEventView: View {
                     // Text input card
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top, spacing: 8) {
-                            TextField("Dentist appt tomorrow at 3pm…", text: $eventText, axis: .vertical)
+                            TextField(Self.placeholders[placeholderIndex], text: $eventText, axis: .vertical)
                                 .font(.system(size: 17))
                                 .foregroundStyle(Color(hex: "1A0F00"))
                                 .tint(theme.colors.ribbon)
@@ -703,6 +740,9 @@ struct AddEventView: View {
                     .clipShape(Capsule())
                 }
             }
+
+            // What Olana understood besides the time (PRD v6 §1.7a).
+            CaptureChips(draft: $captureDraft, isTask: !isEventMode, onPlaceChanged: resolvePlace)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -954,7 +994,11 @@ struct AddEventView: View {
             // ML classification off main thread
             let text = eventText
             let dateHint = selectedDate ?? extractedDate
+            // Capture parse runs alongside urgency, not inside it (§3.4a).
+            let baseTitle = extractTitle(from: text)
+            async let captured = CaptureParser.run(message: text, title: baseTitle)
             let classification = await UrgencyManager.shared.classify(text: text, date: dateHint)
+            let capture = await captured
 
             if selectedDate == nil || (selectedEndDate == nil && extractedEndDate == nil) {
                 let (start, end) = await extractDateRangeFromText(text)
@@ -969,11 +1013,15 @@ struct AddEventView: View {
             if recurrence != .none && selectedRecurrence == .none {
                 selectedRecurrence = recurrence
             }
-            let title = extractTitle(from: text)
+            let draft = CaptureDraft(result: capture, message: text)
+            let title = CaptureCode.title(baseTitle, removing: CaptureCode.chipPhrases(draft.effective, message: text))
 
             await MainActor.run {
                 mlClassification = classification
+                captureBaseTitle = baseTitle
+                captureDraft     = draft
                 editedTitle      = title
+                if let place = capture.placeText { resolvePlace(place) }
                 isAnalyzing      = false
                 withAnimation(.spring(response: 0.35)) { currentStep = .review }
             }
@@ -993,7 +1041,9 @@ struct AddEventView: View {
             // Carry the judgement made on the review screen rather than discarding
             // it and paying for the same extraction again during backfill.
             semantics: mlClassification?.semantics,
-            userPickedUrgency: userSelectedUrgency != nil
+            userPickedUrgency: userSelectedUrgency != nil,
+            capture: captureDraft.effective, message: eventText,
+            place: captureDraft.place
         )
 
         if let classification = mlClassification {

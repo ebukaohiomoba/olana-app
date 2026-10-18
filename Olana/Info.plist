@@ -21,6 +21,12 @@
 	<string>Olana uses full-screen alarms to make sure you never miss a critical event, even when your phone is on silent.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Olana reads your calendar so you always know what's coming — without switching apps. Your data stays on your device and is never shared.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Olana uses your location to find the places in your events and work out when to leave. Apple Maps gets where you are and where you're going; nothing else leaves your phone.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIAppFonts</key>
