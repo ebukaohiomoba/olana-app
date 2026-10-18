@@ -34,7 +34,7 @@ func input(_ title: String = "Dentist", start: Date = at(15, 0), minutes: Int = 
            place: ResolvedPlace? = nil, eta: Int? = nil, plus: Bool = true, actBy: Date? = nil) -> SheetInput {
     SheetInput(title: title, start: start, end: start.addingTimeInterval(Double(minutes) * 60), location: location,
                facts: NotesCleaner.clean(notes: notes, location: location), assist: a, place: place, actBy: actBy,
-               eta: eta.map { Double($0) * 60 }, hasPlus: plus, now: now, calendar: cal)
+               eta: eta.map { ETAFreshness.Effective(seconds: Double($0) * 60, approximate: false) }, hasPlus: plus, now: now, calendar: cal)
 }
 func kinds(_ c: SheetContent) -> [SheetHelperKind] { c.helpers.map(\.kind) }
 

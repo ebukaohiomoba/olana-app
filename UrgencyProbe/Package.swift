@@ -106,6 +106,17 @@ let package = Package(
             ]
         ),
         .executableTarget(
+            name: "ExecChecks",
+            path: "Sources/ExecChecks",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+                .unsafeFlags([
+                    "-plugin-path",
+                    "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins"
+                ])
+            ]
+        ),
+        .executableTarget(
             name: "SyncChecks",
             path: "Sources/SyncChecks",
             swiftSettings: [.swiftLanguageMode(.v5)]

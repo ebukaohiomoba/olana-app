@@ -168,3 +168,19 @@ extension ExecTimes {
         return .starts
     }
 }
+
+// MARK: - Formatting shared by the card, sheet and alerts
+
+enum ExecFormat {
+    /// "2:26" (no AM/PM, as on the card).
+    static func clock(_ d: Date, _ cal: Calendar = .current) -> String {
+        let c = cal.dateComponents([.hour, .minute], from: d)
+        let h = (c.hour ?? 0) % 12 == 0 ? 12 : (c.hour ?? 0) % 12
+        return String(format: "%d:%02d", h, c.minute ?? 0)
+    }
+
+    /// "30 min", "1 h", "1 h 30 min".
+    static func duration(_ minutes: Int) -> String {
+        minutes < 60 ? "\(minutes) min" : (minutes % 60 == 0 ? "\(minutes / 60) h" : "\(minutes / 60) h \(minutes % 60) min")
+    }
+}

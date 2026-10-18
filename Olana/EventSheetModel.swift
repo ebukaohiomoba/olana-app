@@ -136,12 +136,16 @@ struct SheetInput {
     var userSteps: [String] = []
     var userBring: [String] = []
     var arriveEarlyMinutes: Int?
+    /// Typed in the add box.
     var attendance: AssistAttendance?
+    /// The user's "In person or online?" answer.
+    var attendanceAnswer: AssistAttendance?
     var place: ResolvedPlace?
     /// start − the model's prep lead, nil when none.
     var actBy: Date?
     /// Travel time in seconds when known (M1-C ETA).
-    var eta: TimeInterval?
+    var eta: ETAFreshness.Effective?
+    var travelMode: TravelMode = .driving
     var checkedSteps: Set<String> = []
     var state = PhaseState()
     var unranked = false
@@ -159,26 +163,14 @@ enum EventSheetBuilder {
         let result = assistResult(i.assist)
         let meeting = i.meetingURL ?? i.facts.meetingURL
         let locationKind = result?.locationKind
-        let geocodable = i.place != nil || locationKind == .streetAddress || locationKind == .namedPlace
-        let isRoomish = locationKind == .roomInBuilding || locationKind == .unclear || locationKind == .virtual
-
-        // Attendance (PRD v6 §3.4): a link alone is virtual, a place alone is in person.
-        let attendance: AssistAttendance? = {
-            if let a = i.attendance { return a }
-            if meeting != nil && !geocodable { return .virtual }
-            if meeting == nil && geocodable { return .inPerson }
-            return result?.attendance
-        }()
-        let needsTravel = !i.isTask && attendance != .virtual && geocodable && !isRoomish
-            && (result?.needsTravel ?? (i.place != nil))
-
-        let effort = PrepEffort(rawValue: result?.effortMinutes ?? 0) ?? .none
-        let times = ExecTimes(.init(start: i.start, end: i.end, actBy: i.actBy, effort: effort,
-                                    attendance: attendance == .virtual ? .virtual : (attendance == .inPerson ? .inPerson : .none),
-                                    hasMeetingLink: meeting != nil, needsTravel: needsTravel, eta: i.eta,
-                                    arriveEarly: TimeInterval((i.overrides.arriveEarlyMinutes ?? i.arriveEarlyMinutes
-                                                               ?? result?.arriveEarlyMinutes ?? 15) * 60),
-                                    outTheDoor: TimeInterval((result?.outTheDoorMinutes ?? 5) * 60), isTask: i.isTask))
+        let trip = TripResolver.resolve(TripInputs(
+            start: i.start, end: i.end, isTask: i.isTask, location: i.location, meetingURL: meeting, assist: result,
+            attendanceAnswer: i.attendanceAnswer, attendanceTyped: i.attendance, place: i.place, actBy: i.actBy,
+            eta: i.eta, arriveEarlyOverride: i.overrides.arriveEarlyMinutes, arriveEarlyTyped: i.arriveEarlyMinutes))
+        let times = trip.times
+        let needsTravel = trip.needsTravel
+        let isRoomish = trip.roomish
+        let effort = times.effort
         let phase = times.phase(now: i.now, state: i.state)
 
         // Helpers with data.
@@ -208,7 +200,9 @@ enum EventSheetBuilder {
         if needsTravel {
             let (apple, google) = mapsLinks(i)
             available[.leave] = .leave(SheetLeave(
-                line: i.hasPlus ? times.leaveBy.map { "Leave by \(clock($0, i.calendar))" } : nil,
+                line: i.hasPlus ? (trip.planTravel ? "Plan travel" : times.leaveBy.map {
+                    "Leave by \(i.eta?.approximate == true ? "about " : "")\(clock($0, i.calendar))"
+                        + (i.eta.map { " · \(ETAFreshness.phrase($0.seconds, mode: i.travelMode))" } ?? "") }) : nil,
                 locked: !i.hasPlus, appleMaps: apple, googleMaps: google))
         }
 
@@ -332,7 +326,7 @@ enum EventSheetBuilder {
             let line = late >= 1 ? "Join now · started \(late) min ago" : "Join now"
             return SheetTopAction(phase: phase, line: line, button: meeting.map { .join($0) }, locked: false)
         case .onTheWay:
-            let arrive = i.eta.map { i.now.addingTimeInterval($0) }
+            let arrive = i.eta.map { i.now.addingTimeInterval($0.seconds) }
             return SheetTopAction(phase: phase, line: arrive.map { "On the way · arrive about \(clock($0, cal))" } ?? "On the way",
                                   button: .imHere, locked: false)
         case .leave(let late):
@@ -394,15 +388,8 @@ enum EventSheetBuilder {
 
     // MARK: Formatting
 
-    static func clock(_ d: Date, _ cal: Calendar) -> String {
-        let c = cal.dateComponents([.hour, .minute], from: d)
-        let h = (c.hour ?? 0) % 12 == 0 ? 12 : (c.hour ?? 0) % 12
-        return String(format: "%d:%02d", h, c.minute ?? 0)
-    }
-
-    static func duration(_ minutes: Int) -> String {
-        minutes < 60 ? "\(minutes) min" : (minutes % 60 == 0 ? "\(minutes / 60) h" : "\(minutes / 60) h \(minutes % 60) min")
-    }
+    static func clock(_ d: Date, _ cal: Calendar) -> String { ExecFormat.clock(d, cal) }
+    static func duration(_ minutes: Int) -> String { ExecFormat.duration(minutes) }
 
     static func dayName(_ d: Date, now: Date, calendar cal: Calendar) -> String {
         if cal.isDate(d, inSameDayAs: now) { return "today" }

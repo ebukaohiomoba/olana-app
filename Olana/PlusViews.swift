@@ -68,6 +68,24 @@ final class PlusStore: ObservableObject {
     }
 }
 
+// MARK: - Access
+
+/// Whether Plus helpers unlock (PRD v6 §1.10): PlusStore (purchase, beta fake
+/// door, or the five-moment preview). DEBUG builds can force it on or off.
+@MainActor
+enum PlusAccess {
+    private static let debugKey = "olanaPlusDebug_v1"
+
+    static var hasPlus: Bool {
+        #if DEBUG
+        if let forced = UserDefaults.standard.object(forKey: debugKey) as? Bool { return forced }
+        #endif
+        return PlusStore.shared.hasPlus
+    }
+
+    static func setDebug(_ on: Bool?) { UserDefaults.standard.set(on, forKey: debugKey) }
+}
+
 // MARK: - Paywall (beta: fake door)
 
 struct PlusPaywallView: View {
