@@ -120,5 +120,49 @@ check("done events never show",
       [ev("Client review", at(15, 0), done: true), ev("1:1", at(17, 0))],
       now: at(13, 0), title: "1:1")
 
+// Execution times (PRD v6 §1.7, §3.6; spec v3 §7.1).
+func times(minutes: Int = 60, actBy: Date? = nil, effort: PrepEffort = .none,
+           _ attendance: Attendance = .none, link: Bool = false, travel: Bool = false,
+           eta: Int? = nil, task: Bool = false) -> ExecTimes {
+    let s = at(15, 0)
+    return ExecTimes(.init(start: s, end: s.addingTimeInterval(Double(minutes) * 60), actBy: actBy, effort: effort,
+                           attendance: attendance, hasMeetingLink: link, needsTravel: travel,
+                           eta: eta.map { Double($0) * 60 }, isTask: task))
+}
+func expect(_ name: String, _ ok: Bool, _ got: @autoclosure () -> String = "") {
+    print(ok ? "PASS" : "FAIL", name)
+    if !ok { failures += 1; print("     got:", got()) }
+}
+
+let plain = times(actBy: at(14, 20))
+expect("times: no effort, prep start-by is actBy and the deadline is start",
+       plain.prepStartBy == at(14, 20) && plain.prepDeadline == at(15, 0) && plain.grace == at(15, 10), "\(plain)")
+expect("times: no prep lead and no effort means no prep", !times().hasPrep)
+expect("times: effort alone sets start-by at deadline − effort", times(effort: .thirty).prepStartBy == at(14, 30))
+expect("times: start-by is the earlier of actBy and deadline − effort",
+       times(actBy: at(14, 0), effort: .thirty).prepStartBy == at(14, 0)
+         && times(actBy: at(14, 50), effort: .thirty).prepStartBy == at(14, 30))
+
+let trip = times(actBy: at(14, 0), effort: .sixty, .inPerson, travel: true, eta: 14)
+expect("times: travel, leave by start − ETA − 15, get ready 5 before, prep done by get-ready",
+       trip.isTravel && trip.leaveBy == at(14, 31) && trip.getReadyAt == at(14, 26)
+         && trip.prepDeadline == at(14, 26) && trip.prepStartBy == at(13, 26) && trip.grace == at(15, 20), "\(trip)")
+expect("times: travel with no effort and actBy after get-ready has no prep window",
+       !times(actBy: at(14, 50), .inPerson, travel: true, eta: 14).hasPrep)
+expect("times: in person with no ETA is not travel; deadline is start, grace 20",
+       { let t = times(actBy: at(14, 0), .inPerson, travel: true); return !t.isTravel && t.prepDeadline == at(15, 0) && t.grace == at(15, 20) }())
+
+let call = times(effort: .fifteen, .virtual, link: true)
+expect("times: virtual with a link, join opens 5 before, prep done by then, grace 15",
+       call.isVirtual && call.joinOpen == at(14, 55) && call.prepDeadline == at(14, 55)
+         && call.prepStartBy == at(14, 40) && call.grace == at(15, 15), "\(call)")
+expect("times: virtual without a link is not virtual",
+       { let t = times(.virtual); return !t.isVirtual && t.prepDeadline == at(15, 0) && t.grace == at(15, 10) }())
+expect("times: a task never travels or joins, but keeps prep",
+       { let t = times(actBy: at(14, 0), .inPerson, travel: true, eta: 14, task: true)
+         return !t.isTravel && !t.isVirtual && t.prepStartBy == at(14, 0) && t.prepDeadline == at(15, 0) }())
+expect("times: grace never runs past the end", times(minutes: 5).grace == at(15, 5))
+expect("times: PREP NOW's upcoming moment is deadline − effort", trip.prepMoment == at(13, 26))
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

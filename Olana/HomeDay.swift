@@ -6,10 +6,11 @@
 //  Pure value types: no SwiftUI, no SwiftData writes, so every rule here can be
 //  checked against a fixed `now` (spec_m0_m1_v2 §14).
 //
-//  Card selection and the card line follow PRD v6 §3.6 and §1.7. M1-B has
-//  only prep and start: prepStartBy is `actBy` and prepDeadline is start until
-//  EventAssist (M1-C) adds effort, leave, get-ready and join. Those phases slot
-//  into `Phase`, `rank` and the runway ticks.
+//  Card selection and the card line follow PRD v6 §3.6 and §1.7. The times
+//  come from ExecTimes. M1-B has only prep and start: with no effort and no
+//  attendance, prepStartBy is actBy and prepDeadline is start. EventAssist
+//  (M1-C) adds effort, leave, get-ready and join; those phases slot into
+//  `Phase`, `rank` and the runway ticks.
 //
 
 import Foundation
@@ -212,8 +213,8 @@ enum HomeDayBuilder {
     }
 
     private static func railItem(_ e: Input, now: Date) -> RailItem {
-        let prepFrom: Date? = e.prepHours.map { e.start.addingTimeInterval(-$0 * 3600) }
-            .flatMap { $0 < e.start && e.start > now ? max($0, now) : nil }
+        let prepFrom: Date? = times(e).prepStartBy
+            .flatMap { e.start > now ? max($0, now) : nil }
         return RailItem(id: e.id, title: e.title, start: e.start, end: e.end,
                         urgency: e.urgency, isTask: e.isTask, isRecurring: e.isRecurring,
                         prepFrom: prepFrom,
@@ -222,9 +223,12 @@ enum HomeDayBuilder {
 
     // MARK: Card
 
-    /// Grace for events that are neither travel nor virtual: min(start + 10, end).
-    /// M1-C adds 20 min in person and 15 virtual.
-    static let otherGrace: TimeInterval = 10 * 60
+    /// The event's execution times. Until M1-C there's no effort, attendance
+    /// or ETA, so only actBy (start − the model's prep lead) feeds in.
+    static func times(_ e: Input) -> ExecTimes {
+        let actBy = e.prepHours.flatMap { $0 > 0 ? e.start.addingTimeInterval(-$0 * 3600) : nil }
+        return ExecTimes(.init(start: e.start, end: e.end, actBy: actBy, isTask: e.isTask))
+    }
 
     /// Where an event stands right now, for selection and for its line.
     struct Standing {
@@ -239,18 +243,16 @@ enum HomeDayBuilder {
     /// which drops the event off the card, no guilt.
     static func standing(_ e: Input, now: Date) -> Standing? {
         guard !e.completed, !e.isAllDay, !e.isTask else { return nil }
-        let grace = min(e.start.addingTimeInterval(otherGrace), e.end)
-        guard now <= grace else { return nil }
+        let t = times(e)
+        guard now <= t.grace else { return nil }
 
-        let prepDeadline = e.start                       // M1-C: getReadyAt / joinOpen
-        if let h = e.prepHours, h > 0, now < prepDeadline {
-            let prepStartBy = e.start.addingTimeInterval(-h * 3600)   // M1-C: min(actBy, deadline − effort)
+        // Prep phases end at the deadline (spec §7.3).
+        if let prepStartBy = t.prepStartBy, now < t.prepDeadline {
             if now >= prepStartBy {
                 // PREP NOW is active only when the deadline is within 12 h;
-                // further out it counts as an upcoming moment at the deadline
-                // (deadline − effort once effort exists).
-                let near = prepDeadline.timeIntervalSince(now) <= runwayHorizon
-                return Standing(phase: .prepNow, activeRank: near ? 4 : nil, moment: prepDeadline)
+                // further out it counts as an upcoming moment at deadline − effort.
+                let near = t.prepDeadline.timeIntervalSince(now) <= runwayHorizon
+                return Standing(phase: .prepNow, activeRank: near ? 4 : nil, moment: t.prepMoment)
             }
             return Standing(phase: .prepBy, activeRank: nil, moment: prepStartBy)
         }
@@ -301,10 +303,8 @@ enum HomeDayBuilder {
     static func card(_ e: Input, standing: Standing, now: Date,
                      calendar: Calendar = .current) -> NextCard {
         let urgency = e.scored?.urgency ?? e.urgency
-        let prepFrom: Date? = {
-            guard let h = e.prepHours, h > 0 else { return nil }
-            return e.start.addingTimeInterval(-h * 3600)
-        }()
+        let t = times(e)
+        let prepFrom = t.prepStartBy
         let place = e.location?.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasPlace = !(place ?? "").isEmpty
 
@@ -312,10 +312,10 @@ enum HomeDayBuilder {
         switch standing.phase {
         case .prepNow:
             // M1-C adds "about 1 h," from the effort bucket.
-            (lead, gold, trail) = ("Prep ", "now", " · done by \(HomeFormat.clock(e.start))")
+            (lead, gold, trail) = ("Prep ", "now", " · done by \(HomeFormat.clock(t.prepDeadline))")
         case .prepBy:
             let p = standing.moment
-            if e.start.timeIntervalSince(now) <= runwayHorizon {      // deadline within 12 h
+            if t.prepDeadline.timeIntervalSince(now) <= runwayHorizon {
                 (lead, gold) = ("Start prepping by ", HomeFormat.clock(p))
             } else {
                 (lead, gold) = HomeFormat.prepLater(p, now: now, calendar: calendar)
