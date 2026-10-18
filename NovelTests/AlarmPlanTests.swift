@@ -64,6 +64,23 @@ struct AlarmPlanTests {
         #expect(plan?.fireDate == start)
     }
 
+    @Test func prepAlarmRingsAtPrepStartBy() {
+        // B16: prep has to finish before leaving, so start-by is earlier than start − lead.
+        let start = now.addingTimeInterval(10 * 24 * hour)
+        let startBy = start.addingTimeInterval(-50 * hour)
+        let plan = UrgencyCombiner.alarmPlan(semantics: sem(.severe, .fixed, prep: .long),
+                                             start: start, now: now, prepStartBy: startBy)
+        #expect(plan?.fireDate == startBy)
+        #expect(plan?.advancedByPrep == true)
+    }
+
+    @Test func pastPrepStartByRingsForTheEvent() {
+        let start = now.addingTimeInterval(10 * hour)
+        let plan = UrgencyCombiner.alarmPlan(semantics: sem(.severe, .fixed, prep: .long),
+                                             start: start, now: now, prepStartBy: now.addingTimeInterval(-hour))
+        #expect(plan?.fireDate == start)
+    }
+
     @Test func pastEventsGetNoPlan() {
         #expect(UrgencyCombiner.alarmPlan(semantics: sem(.severe, .fixed),
                                           start: now.addingTimeInterval(-hour), now: now) == nil)

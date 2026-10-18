@@ -967,9 +967,12 @@ class NotificationEngine: ObservableObject {
     /// Rings when preparation has to start, which for anything needing it is
     /// earlier than the event itself. That is the whole point.
     private func scheduleAlarmIfEarned(for event: OlanaEvent) async {
-        guard !event.completed,
-              let semantics = event.cachedSemantics,
-              let plan = UrgencyCombiner.alarmPlan(semantics: semantics, start: event.start)
+        guard !event.completed, let semantics = event.cachedSemantics else { return }
+        // B16: the prep alarm rings at prepStartBy, not actBy (spec v3 §7.7).
+        let overrides = overridesProvider?(event) ?? OverrideResolver.resolve(event: nil, series: nil)
+        if overrides.assistMode == .noAlerts { return }
+        let startBy = ExecContext.trip(for: event, overrides: overrides, now: Date()).times.prepStartBy
+        guard let plan = UrgencyCombiner.alarmPlan(semantics: semantics, start: event.start, prepStartBy: startBy)
         else { return }
 
         let allowed: Bool

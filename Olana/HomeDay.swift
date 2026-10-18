@@ -19,17 +19,21 @@ import Foundation
 
 struct NextCard: Equatable {
 
-    /// PRD v6 §3.6, in first-match order. M1-C adds join, on the way, leave,
-    /// get ready and leave by ahead of and between these.
+    /// PRD v6 §3.6, in first-match order.
     enum Phase: Equatable {
-        case prepNow           // Prep now · done by 3:00
+        case join              // Join now · started 4 min ago
+        case onTheWay          // On the way · arrive about 2:58
+        case leave             // Leave now · about 4 min late
+        case getReady          // Get ready · leave at 2:26
+        case prepNow           // Prep now · about 1 h, done by 3:00
         case prepBy            // Start prepping by 2:20 / Prep today / Prep by tomorrow morning
+        case leaveBy           // Leave by 2:26 · 14 min walk
         case happeningNow      // Happening now · Room 2
         case startsAt          // Starts at 3:00
     }
 
     struct Tick: Equatable {
-        enum Kind: Equatable { case now, prep, start }
+        enum Kind: Equatable { case now, prep, leave, join, start }
         let kind: Kind
         let date: Date
     }
@@ -60,6 +64,10 @@ struct NextCard: Equatable {
         let to: Date            // right edge, just past start for the red cap
         let now: Date
         let prepFrom: Date?     // hatched prep window, nil when no prep
+        /// End of the prep window: prepDeadline (get-ready, join-open or start).
+        var prepTo: Date? = nil
+        /// Get-ready to start for travel events (dotted).
+        var travelFrom: Date? = nil
         let start: Date
         let ticks: [Tick]
 
@@ -73,6 +81,8 @@ struct NextCard: Equatable {
         var accessibilityText: String {
             var parts: [String] = []
             if let p = prepFrom { parts.append("Prep from \(HomeFormat.clock(p))") }
+            for t in ticks where t.kind == .leave { parts.append("leave at \(HomeFormat.clock(t.date))") }
+            for t in ticks where t.kind == .join { parts.append("join at \(HomeFormat.clock(t.date))") }
             parts.append("starts at \(HomeFormat.clock(start))")
             return parts.joined(separator: ", ").capitalizedFirst
         }
@@ -161,6 +171,18 @@ enum HomeDayBuilder {
         /// Gets execution help (PRD §1.6): Moderate+ consequence, or the user
         /// said it matters. Only assisted events can be on the card.
         let assisted: Bool
+        /// M1-C: the trip-resolved times (TripResolver). nil falls back to
+        /// actBy-only times, as in M1-B.
+        var exec: ExecTimes? = nil
+        var state = PhaseState()
+        /// "14 min walk", for the leave-by line.
+        var tripPhrase: String? = nil
+        var etaSeconds: TimeInterval? = nil
+        /// Stale ETA: times say "about".
+        var approximate = false
+        /// Plus phases (leave-by, get ready, leave, prep timing) show their
+        /// time only with Plus; free shows the start (PRD v6 §1.10).
+        var hasPlus = true
     }
 
     static let runwayHorizon: TimeInterval = 12 * 3600
@@ -226,6 +248,7 @@ enum HomeDayBuilder {
     /// The event's execution times. Until M1-C there's no effort, attendance
     /// or ETA, so only actBy (start − the model's prep lead) feeds in.
     static func times(_ e: Input) -> ExecTimes {
+        if let exec = e.exec { return exec }
         let actBy = e.prepHours.flatMap { $0 > 0 ? e.start.addingTimeInterval(-$0 * 3600) : nil }
         return ExecTimes(.init(start: e.start, end: e.end, actBy: actBy, isTask: e.isTask))
     }
@@ -244,22 +267,31 @@ enum HomeDayBuilder {
     static func standing(_ e: Input, now: Date) -> Standing? {
         guard !e.completed, !e.isAllDay, !e.isTask else { return nil }
         let t = times(e)
-        guard now <= t.grace else { return nil }
-
-        // Prep phases end at the deadline (spec §7.3).
-        if let prepStartBy = t.prepStartBy, now < t.prepDeadline {
-            if now >= prepStartBy {
-                // PREP NOW is active only when the deadline is within 12 h;
-                // further out it counts as an upcoming moment at deadline − effort.
-                let near = t.prepDeadline.timeIntervalSince(now) <= runwayHorizon
-                return Standing(phase: .prepNow, activeRank: near ? 4 : nil, moment: t.prepMoment)
-            }
-            return Standing(phase: .prepBy, activeRank: nil, moment: prepStartBy)
+        switch t.phase(now: now, state: e.state) {
+        case .done:
+            return nil
+        case .join:
+            return Standing(phase: .join, activeRank: 0, moment: t.joinOpen)
+        case .leave:
+            return Standing(phase: .leave, activeRank: 0, moment: t.leaveBy ?? e.start)
+        case .onTheWay:
+            return Standing(phase: .onTheWay, activeRank: 1, moment: t.leaveBy ?? e.start)
+        case .getReady:
+            return Standing(phase: .getReady, activeRank: 2, moment: t.getReadyAt ?? e.start)
+        case .prepNow:
+            // PREP NOW is active only when the deadline is within 12 h;
+            // further out it counts as an upcoming moment at deadline − effort.
+            let near = t.prepDeadline.timeIntervalSince(now) <= runwayHorizon
+            return Standing(phase: .prepNow, activeRank: near ? 3 : nil, moment: t.prepMoment)
+        case .prepBy:
+            return Standing(phase: .prepBy, activeRank: nil, moment: t.prepStartBy ?? t.prepDeadline)
+        case .leaveBy:
+            return Standing(phase: .leaveBy, activeRank: nil, moment: t.getReadyAt ?? t.leaveBy ?? e.start)
+        case .now:
+            return Standing(phase: .happeningNow, activeRank: 4, moment: e.start)
+        case .starts:
+            return Standing(phase: .startsAt, activeRank: nil, moment: t.isVirtual ? t.joinOpen : e.start)
         }
-        if now >= e.start {
-            return Standing(phase: .happeningNow, activeRank: 5, moment: e.start)
-        }
-        return Standing(phase: .startsAt, activeRank: nil, moment: e.start)
     }
 
     /// Ranked candidates: active first (JOIN = LEAVE > ON THE WAY > GET READY >
@@ -309,16 +341,45 @@ enum HomeDayBuilder {
         let hasPlace = !(place ?? "").isEmpty
 
         var lead = "", gold = "", trail = ""
-        switch standing.phase {
+        let about = e.approximate ? "about " : ""
+        let effort = t.effort == .none ? nil : ExecFormat.duration(t.effort.rawValue)
+        // Free: the start instead of a Plus time; prep as a day phrase only.
+        var phase = standing.phase
+        if !e.hasPlus, [.leave, .getReady, .leaveBy, .onTheWay].contains(phase) {
+            phase = now >= e.start ? .happeningNow : .startsAt
+        }
+        switch phase {
+        case .join:
+            let late = Int(now.timeIntervalSince(e.start) / 60)
+            (lead, gold, trail) = ("Join ", "now", late >= 1 ? " · started \(late) min ago" : "")
+        case .leave:
+            let late = t.leaveBy.map { Int(now.timeIntervalSince($0) / 60) } ?? 0
+            (lead, gold, trail) = ("Leave ", "now", late >= 1 ? " · about \(late) min late" : "")
+        case .getReady:
+            (lead, gold) = ("Get ready · leave at ", about + HomeFormat.clock(t.leaveBy ?? e.start))
+        case .onTheWay:
+            let arrive = e.etaSeconds.map { now.addingTimeInterval($0) }
+            if let arrive { (lead, gold) = ("On the way · arrive about ", HomeFormat.clock(arrive)) }
+            else { (lead, gold) = ("On the way", "") }
+        case .leaveBy:
+            (lead, gold) = ("Leave by ", about + HomeFormat.clock(t.leaveBy ?? e.start))
+            if let trip = e.tripPhrase { trail = " · \(trip)" }
         case .prepNow:
-            // M1-C adds "about 1 h," from the effort bucket.
-            (lead, gold, trail) = ("Prep ", "now", " · done by \(HomeFormat.clock(t.prepDeadline))")
+            if !e.hasPlus {
+                (lead, gold) = ("Prep due ", "today")
+            } else {
+                (lead, gold, trail) = ("Prep ", "now", " · \(effort.map { "about \($0), " } ?? "")done by \(HomeFormat.clock(t.prepDeadline))")
+            }
         case .prepBy:
             let p = standing.moment
-            if t.prepDeadline.timeIntervalSince(now) <= runwayHorizon {
+            if e.hasPlus, t.prepDeadline.timeIntervalSince(now) <= runwayHorizon {
                 (lead, gold) = ("Start prepping by ", HomeFormat.clock(p))
+                if let effort {
+                    trail = " · about \(effort)" + (t.getReadyAt.map { ", done before you get ready at \(HomeFormat.clock($0))" } ?? "")
+                }
             } else {
                 (lead, gold) = HomeFormat.prepLater(p, now: now, calendar: calendar)
+                if e.hasPlus, let effort { trail = " · about \(effort)" }
             }
         case .happeningNow:
             (lead, gold) = ("Happening ", "now")
@@ -343,12 +404,16 @@ enum HomeDayBuilder {
                         start: e.start, end: e.end, place: e.location,
                         phase: standing.phase, lead: lead, gold: gold, trail: trail,
                         detail: detail,
-                        runway: runway(start: e.start, prepFrom: prepFrom, now: now))
+                        runway: runway(start: e.start, prepFrom: prepFrom, now: now,
+                                       prepTo: prepFrom == nil ? nil : t.prepDeadline,
+                                       leave: e.hasPlus ? t.leaveBy : nil, travelFrom: e.hasPlus ? t.getReadyAt : nil,
+                                       join: t.isVirtual ? t.joinOpen : nil))
     }
 
     /// Ticks only for phases that exist (spec §14.3). M1-B has no leave or join,
     /// so a room event never shows a leave tick.
-    static func runway(start: Date, prepFrom: Date?, now: Date) -> NextCard.Runway? {
+    static func runway(start: Date, prepFrom: Date?, now: Date, prepTo: Date? = nil,
+                       leave: Date? = nil, travelFrom: Date? = nil, join: Date? = nil) -> NextCard.Runway? {
         guard start > now, start.timeIntervalSince(now) <= runwayHorizon else { return nil }
 
         // The left edge holds still once the clock passes it, so the fill grows.
@@ -358,10 +423,14 @@ enum HomeDayBuilder {
 
         var ticks: [NextCard.Tick] = [.init(kind: .now, date: now)]
         if let p = prepFrom, p > now { ticks.append(.init(kind: .prep, date: p)) }
+        // Ticks only for phases that exist: leave for travel, join for virtual.
+        if let l = leave, l > now { ticks.append(.init(kind: .leave, date: l)) }
+        if let j = join, j > now { ticks.append(.init(kind: .join, date: j)) }
         ticks.append(.init(kind: .start, date: start))
 
         return NextCard.Runway(from: from, to: to, now: now,
-                               prepFrom: prepFrom.map { max($0, from) },
+                               prepFrom: prepFrom.map { max($0, from) }, prepTo: prepTo,
+                               travelFrom: travelFrom.map { max($0, from) },
                                start: start, ticks: ticks)
     }
 }

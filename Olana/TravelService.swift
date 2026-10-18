@@ -226,3 +226,68 @@ final class TravelService {
                                  workHours: ExecPreferences.workHours, override: override)
     }
 }
+
+// MARK: - Refresh (PRD v6 §3.2 steps 3 and 5; spec v3 §6.4)
+
+@MainActor
+enum ExecRefresher {
+    /// Step 3: ETAs for travel events whose leave-by is within `horizon`
+    /// (background: 3 h; foreground: the next 24 h). Returns how many changed.
+    static func refreshETAs(store: EventStore, horizon: TimeInterval, until deadline: Date? = nil) async -> Int {
+        let now = Date()
+        var changed = 0
+        for e in store.events where e.start > now && e.start.timeIntervalSince(now) <= horizon + 6 * 3600 && !e.completed {
+            if let deadline, Date() > deadline { break }
+            let ov = store.effectiveOverrides(for: e)
+            let trip = ExecContext.trip(for: e, overrides: ov, now: now)
+            guard trip.needsTravel else { continue }
+            let leaveBy = trip.times.leaveBy ?? e.start
+            guard leaveBy.timeIntervalSince(now) <= horizon else { continue }
+            let before = ETAStore.shared.get(e.overrideEventKey)?.reading
+            let after = await TravelService.shared.refresh(e, events: store.events, overrides: ov, now: now)
+            if after != before { changed += 1 }
+        }
+        return changed
+    }
+
+    /// EventAssist jobs in ModelQueue order (spec §6.4): Always Assist and
+    /// Critical in 24 h, then unranked in 24 h (fallback), then Moderate+ in
+    /// 24 h, then the same in 7 days. Skips events with a cached answer.
+    /// A real place from the answer is resolved right after.
+    static func assistJobs(store: EventStore, limit: Int, until deadline: Date? = nil) async -> Int {
+        let now = Date()
+        let candidates = store.events.filter { e in
+            !e.completed && !e.isAllDay && e.start > now && e.start.timeIntervalSince(now) <= 7 * 24 * 3600
+        }
+        func rank(_ e: OlanaEvent) -> Int? {
+            let ov = store.effectiveOverrides(for: e)
+            if ov.assistMode == .noAlerts { return nil }
+            let in24 = e.start.timeIntervalSince(now) <= 24 * 3600
+            if in24 && (ov.assistMode == .always || ExecContext.isCritical(e, now: now)) { return 2 }
+            if in24 && e.isUnrankable { return 3 }
+            if ExecContext.isModeratePlus(e) { return in24 ? 4 : 5 }
+            return nil
+        }
+        let queue = candidates.compactMap { e in rank(e).map { (e, $0) } }
+            .sorted { ($0.1, $0.0.start) < ($1.1, $1.0.start) }
+        var done = 0
+        for (e, _) in queue {
+            if done >= limit { break }
+            if let deadline, Date() > deadline { break }
+            let ov = store.effectiveOverrides(for: e)
+            let input = ExecContext.assistInput(for: e, overrides: ov)
+            if let cached = AssistCache.shared.get(AssistPrompt.cacheKey(input)) {
+                await TravelService.shared.ensurePlace(e, kind: cached.locationKind)
+                continue
+            }
+            let outcome = await EventAssistService.shared.assist(input)
+            done += 1
+            switch outcome {
+            case .full(let r), .basic(let r): await TravelService.shared.ensurePlace(e, kind: r.locationKind)
+            case .unavailable: return done
+            case .none: break
+            }
+        }
+        return done
+    }
+}

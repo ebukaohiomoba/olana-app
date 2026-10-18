@@ -166,6 +166,7 @@ final class EventStore: ObservableObject {
             allEvents = []
         }
         events = allEvents.filter { $0.duplicateOf == nil }
+        overrideCache = nil   // CloudKit may have brought new ones
         rebuildHomeDisplayEvents()
     }
 
@@ -569,10 +570,22 @@ final class EventStore: ObservableObject {
         return try? context.fetch(d).first
     }
 
+    /// All overrides by key, read once and dropped on any change: the card
+    /// asks for every event's overrides each minute.
+    private var overrideCache: [String: OverrideValues]?
+
+    private func cachedOverride(_ key: String) -> OverrideValues? {
+        if overrideCache == nil {
+            let all = (try? context.fetch(FetchDescriptor<AssistOverride>())) ?? []
+            overrideCache = Dictionary(all.map { ($0.key, $0.values) }, uniquingKeysWith: { a, _ in a })
+        }
+        return overrideCache?[key]
+    }
+
     /// The event's and the series' override values, for `OverrideResolver`.
     func overrides(for event: OlanaEvent) -> (event: OverrideValues?, series: OverrideValues?) {
-        let e = overrideRecord(event.overrideEventKey)?.values
-        let s = event.overrideSeriesKey.flatMap { overrideRecord($0)?.values }
+        let e = cachedOverride(event.overrideEventKey)
+        let s = event.overrideSeriesKey.flatMap { cachedOverride($0) }
         return (e?.isEmpty == true ? nil : e, s?.isEmpty == true ? nil : s)
     }
 
@@ -610,6 +623,7 @@ final class EventStore: ObservableObject {
             if ev != own.values { own.apply(ev) }
         }
         try? context.save()
+        overrideCache = nil
         NotificationEngine.shared.requestReplan("override")
     }
 
@@ -617,6 +631,7 @@ final class EventStore: ObservableObject {
     func deleteAllOverrides() {
         try? context.delete(model: AssistOverride.self)
         try? context.save()
+        overrideCache = nil
     }
 
     private func saveAndRefresh() {

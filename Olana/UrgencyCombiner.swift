@@ -159,12 +159,15 @@ public enum UrgencyCombiner {
     /// got no alarm, and nothing asked again. At the moment of acting, time
     /// pressure is at its peak, so this comes down to what the event is, which is
     /// what should decide whether something may ring through Silent and Focus.
+    /// `prepStartBy` (M1-C, spec v3 §7.7): the prep alarm rings at the
+    /// execution start-by, which can be earlier than start − lead when the
+    /// prep has to finish before leaving. nil keeps start − lead.
     public static func alarmPlan(semantics: EventSemantics, start: Date,
-                                 now: Date = Date()) -> AlarmPlan? {
+                                 now: Date = Date(), prepStartBy: Date? = nil) -> AlarmPlan? {
         guard start > now else { return nil }
 
         let prep = semantics.effectivePrep
-        let prepStart = start.addingTimeInterval(-prep.hours * 3600)
+        let prepStart = prepStartBy ?? start.addingTimeInterval(-prep.hours * 3600)
         // If the time to start preparing has already passed, an alarm now would
         // be a jolt about something they can no longer do on time. Ring for the
         // event itself instead.

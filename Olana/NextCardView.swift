@@ -96,11 +96,18 @@ struct RunwayView: View {
                     // Elapsed
                     Rectangle().fill(c.elapsed)
                         .frame(width: x(runway.now))
-                    // Prep window (M1-B: actBy to start; M1-C ends it at prepDeadline)
+                    // Prep window: prepStartBy to prepDeadline (spec §14.3).
                     if let p = runway.prepFrom {
+                        let end = runway.prepTo ?? runway.start
                         HatchFill(color: c.gold)
-                            .frame(width: max(0, x(runway.start) - x(p)))
+                            .frame(width: max(0, x(end) - x(p)))
                             .offset(x: x(p))
+                    }
+                    // Get ready and travel: dotted, get-ready to start.
+                    if let g = runway.travelFrom {
+                        DottedFill(color: c.muted)
+                            .frame(width: max(0, x(runway.start) - x(g)))
+                            .offset(x: x(g))
                     }
                     // Start cap
                     Rectangle().fill(c.crit)
@@ -147,11 +154,18 @@ struct RunwayView: View {
         .frame(height: tickHeight)
     }
 
-    /// Drops the "now" label when the prep tick sits right on top of it.
+    /// Drops labels that would sit on top of the next one: "now" gives way
+    /// first, the start label always stays.
     private var visibleTicks: [NextCard.Tick] {
-        let t = runway.ticks
-        guard t.count > 2, runway.x(t[1].date) - runway.x(t[0].date) < 0.16 else { return t }
-        return Array(t.dropFirst())
+        var kept: [NextCard.Tick] = []
+        for t in runway.ticks {
+            if let last = kept.last, runway.x(t.date) - runway.x(last.date) < 0.16 {
+                // Keep the later, more specific moment.
+                kept.removeLast()
+            }
+            kept.append(t)
+        }
+        return kept
     }
 
     private func value(_ t: NextCard.Tick) -> String {
@@ -162,7 +176,23 @@ struct RunwayView: View {
         switch t.kind {
         case .now:   return " "
         case .prep:  return "prep"
+        case .leave: return "leave"
+        case .join:  return "join"
         case .start: return "start"
+        }
+    }
+}
+
+/// Dots for the get-ready and travel segment of the runway.
+private struct DottedFill: View {
+    let color: Color
+    var body: some View {
+        Canvas { ctx, size in
+            var x: CGFloat = 2
+            while x < size.width {
+                ctx.fill(Path(ellipseIn: CGRect(x: x, y: size.height / 2 - 1.5, width: 3, height: 3)), with: .color(color))
+                x += 6
+            }
         }
     }
 }

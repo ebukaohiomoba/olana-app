@@ -120,16 +120,27 @@ enum BackgroundRefresh {
                             "added": "\(integrity?.added ?? 0)", "elapsed": elapsed(started)])
         if Task.isCancelled { return false }
 
-        // 3 and 4 (ETA refresh, replan) arrive with leave-by in M1-C.
+        // 3. ETA refresh for travel events leaving in the next 3 h (≤ 5 s).
+        let etas = await ExecRefresher.refreshETAs(store: services.store, horizon: 3 * 3600,
+                                                   until: Date().addingTimeInterval(5))
+        log("step 3 eta", ["run": runID, "changed": "\(etas)", "elapsed": elapsed(started)])
+        if Task.isCancelled { return false }
+
+        // 4. Replan with the new ETAs (cheap, idempotent).
+        if etas > 0 { await engine.replan("background eta") }
+        if Task.isCancelled { return false }
 
         // 5. Model work, bounded: up to 3 jobs, never past 8 s before the end.
         let deadline = started.addingTimeInterval(assumedBudget - stopWithLeft)
-        let judged = await services.store.backgroundBackfill(limit: modelJobs, deadline: deadline)
-        log("step 5 model", ["run": runID, "judged": "\(judged.count)", "elapsed": elapsed(started)])
+        // EventAssist first (priorities 2 to 4), then EventSemantics backfill
+        // with what's left of the 3 jobs.
+        let assisted = await ExecRefresher.assistJobs(store: services.store, limit: modelJobs, until: deadline)
+        let judged = await services.store.backgroundBackfill(limit: max(0, modelJobs - assisted), deadline: deadline)
+        log("step 5 model", ["run": runID, "assist": "\(assisted)", "judged": "\(judged.count)", "elapsed": elapsed(started)])
         if Task.isCancelled { return false }
 
         // 6. Judgments unlock alarms and change reminder profiles.
-        if !judged.isEmpty {
+        if !judged.isEmpty || assisted > 0 {
             for event in judged { await engine.refreshAlarm(for: event) }
             await engine.replan("background model")
         }

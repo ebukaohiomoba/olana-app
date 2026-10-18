@@ -182,5 +182,47 @@ expect("phase: active ranks JOIN = LEAVE > ON THE WAY > GET READY > PREP NOW > N
          && ExecPhase.getReady.activeRank == 2 && ExecPhase.prepNow.activeRank == 3 && ExecPhase.now.activeRank == 4
          && ExecPhase.starts.activeRank == nil && ExecPhase.leaveBy.activeRank == nil)
 
+// M1-C card (spec v3 §14.2, §14.3, §7.3).
+func execEv(_ title: String, _ t: ExecTimes, plus: Bool = true, state: PhaseState = .init(), trip: String? = "14 min walk",
+            eta: Double? = 14 * 60, approx: Bool = false) -> HomeDayBuilder.Input {
+    var i = ev(title, t.start, minutes: Int(t.end.timeIntervalSince(t.start) / 60), .high)
+    i.exec = t; i.state = state; i.tripPhrase = trip; i.etaSeconds = eta; i.approximate = approx; i.hasPlus = plus
+    return i
+}
+func cardOf(_ inputs: [HomeDayBuilder.Input], now: Date) -> NextCard? {
+    HomeDayBuilder.build(inputs: inputs, now: now, bed: nil).card ?? HomeDayBuilder.build(inputs: inputs, now: now, bed: nil).peek
+}
+let tripB1 = times(actBy: at(14, 0), effort: .sixty, .inPerson, travel: true, eta: 14)   // get ready 2:26, leave 2:31
+let rest = ev("Later thing", at(18, 0))
+expect("card: LEAVE BY with the trip", cardOf([execEv("Dentist", times(.inPerson, travel: true, eta: 14)), rest], now: at(11, 0))?.line
+       == "Leave by 2:31 · 14 min walk", cardOf([execEv("Dentist", times(.inPerson, travel: true, eta: 14))], now: at(11, 0))?.line ?? "-")
+expect("card: stale ETA says about", cardOf([execEv("Dentist", times(.inPerson, travel: true, eta: 14), approx: true)], now: at(11, 0))?.line
+       == "Leave by about 2:31 · 14 min walk")
+expect("card: PREP BY with effort and done-before (within 12 h)",
+       cardOf([execEv("Client review", tripB1)], now: at(11, 0))?.line == "Start prepping by 1:26 · about 1 h, done before you get ready at 2:26",
+       cardOf([execEv("Client review", tripB1)], now: at(11, 0))?.line ?? "-")
+expect("card: PREP NOW with effort", cardOf([execEv("Client review", tripB1)], now: at(13, 40))?.line == "Prep now · about 1 h, done by 2:26",
+       cardOf([execEv("Client review", tripB1)], now: at(13, 40))?.line ?? "-")
+expect("card: GET READY", cardOf([execEv("Client review", tripB1)], now: at(14, 27))?.line == "Get ready · leave at 2:31")
+expect("card: LEAVE, then late", cardOf([execEv("Client review", tripB1)], now: at(14, 31))?.line == "Leave now"
+       && cardOf([execEv("Client review", tripB1)], now: at(14, 37))?.line == "Leave now · about 6 min late")
+expect("card: ON THE WAY with arrival", cardOf([execEv("Client review", tripB1, state: .init(onTheWay: true))], now: at(14, 33))?.line
+       == "On the way · arrive about 2:47")
+let callT = times(effort: .none, .virtual, link: true)
+expect("card: JOIN from join-open (B6: started 3 min ago)", cardOf([execEv("Recruiter screen", callT)], now: at(14, 55))?.line == "Join now"
+       && cardOf([execEv("Recruiter screen", callT)], now: at(15, 3))?.line == "Join now · started 3 min ago")
+expect("card: JOIN beats an earlier PREP NOW", cardOf([execEv("Recruiter screen", callT), execEv("Client review", tripB1)], now: at(14, 56))?.title
+       == "Recruiter screen")
+expect("card free: never the leave-by time", cardOf([execEv("Dentist", times(.inPerson, travel: true, eta: 14), plus: false)], now: at(11, 0))?.line
+       == "Starts at 3:00")
+expect("card free: prep as a day phrase only", cardOf([execEv("Client review", tripB1, plus: false)], now: at(13, 40))?.line == "Prep due today")
+let rw = cardOf([execEv("Client review", tripB1)], now: at(13, 0))?.runway
+expect("runway: travel has now · prep · leave · start, prep ends at get-ready",
+       rw?.ticks.map(\.kind) == [.now, .prep, .leave, .start] && rw?.prepTo == at(14, 26) && rw?.travelFrom == at(14, 26), "\(String(describing: rw))")
+let roomRw = cardOf([execEv("Standup", times(actBy: at(14, 0)))], now: at(13, 0))?.runway
+expect("runway: a room never gets a leave tick", roomRw.map { !$0.ticks.contains { $0.kind == .leave } } == true)
+expect("runway: virtual gets a join tick", cardOf([execEv("Recruiter screen", callT)], now: at(14, 30))?.runway?.ticks.contains { $0.kind == .join } == true)
+expect("card: done (I'm here) drops off", cardOf([execEv("Client review", tripB1, state: .init(finished: true))], now: at(14, 40)) == nil)
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

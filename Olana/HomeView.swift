@@ -79,6 +79,17 @@ struct HomeView: View {
                 isViewVisible = false
                 stopImminentTimer()
             }
+            .task {
+                // Spec §7.6: every 5 min while home is open, refresh ETAs for
+                // leave-by within 45 min, and replan if one moved.
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 300_000_000_000)
+                    guard scenePhase == .active, isViewVisible else { continue }
+                    if await ExecRefresher.refreshETAs(store: store, horizon: 45 * 60) > 0 {
+                        NotificationEngine.shared.requestReplan("eta 5 min")
+                    }
+                }
+            }
             .onChange(of: scenePhase) { _, newPhase in
                 switch newPhase {
                 case .active:
@@ -88,6 +99,12 @@ struct HomeView: View {
                         await calendarManager.performQuickSync()
                         await store.backfillSemantics()
                         NotificationEngine.shared.requestReplan("foreground")
+                        // M1-C: up to 10 EventAssist jobs in the foreground (spec §6.4),
+                        // then ETAs for the next 24 h, then plan with them.
+                        _ = await ExecRefresher.assistJobs(store: store, limit: 10)
+                        if await ExecRefresher.refreshETAs(store: store, horizon: 24 * 3600) > 0 {
+                            NotificationEngine.shared.requestReplan("foreground eta")
+                        }
                     }
                     let events = store.events
                     Task { await NotificationEngine.shared.startLiveActivitiesIfNeeded(for: events) }
@@ -157,7 +174,8 @@ struct HomeView: View {
     private func input(_ e: OlanaEvent, now: Date) -> HomeDayBuilder.Input {
         let sem = e.cachedSemantics
         let prep = sem?.effectivePrep.hours ?? 0
-        return HomeDayBuilder.Input(
+        let ov = store.effectiveOverrides(for: e)
+        var i = HomeDayBuilder.Input(
             id: e.id, title: e.title, start: e.start, end: e.end,
             isAllDay: e.isAllDay, isTask: e.isTask,
             completed: e.completed, completedAt: e.completedAt,
@@ -165,13 +183,30 @@ struct HomeView: View {
             location: e.location, urgency: e.urgency,
             scored: UrgencyManager.shared.cachedScore(for: e, now: now),
             prepHours: prep > 0 ? prep : nil,
-            assisted: Self.isAssisted(e, semantics: sem))
+            assisted: Self.isAssisted(e, semantics: sem, mode: ov.assistMode))
+        // M1-C: the same trip times the alerts and the sheet use.
+        let trip = ExecContext.trip(for: e, overrides: ov, now: now)
+        let stored = ETAStore.shared.get(e.overrideEventKey)
+        let eta = stored.flatMap { ETAFreshness.effective($0.reading, start: e.start, now: now) }
+        let progress = EventProgressStore.shared.get(e.overrideEventKey)
+        i.exec = trip.times
+        i.state = PhaseState(finished: progress.finished, onTheWay: progress.onTheWay, prepDone: progress.prepDone)
+        i.etaSeconds = eta?.seconds
+        i.approximate = eta?.approximate ?? false
+        if trip.planTravel { i.tripPhrase = "plan travel" }
+        else if let eta, let stored {
+            let mode = ov.travelMode.flatMap(TravelMode.init(rawValue:)) ?? ExecPreferences.defaultMode
+            i.tripPhrase = "\(ETAFreshness.phrase(eta.seconds, mode: mode)) from \(stored.originName)"
+        }
+        i.hasPlus = PlusAccess.hasPlus
+        return i
     }
 
-    /// PRD §1.6: help runs for Moderate+ consequence. The user has the last
-    /// word: an urgency they set themselves decides instead. Assist modes
-    /// (Always Assist / No Execution Alerts) replace this check in M1-C.
-    static func isAssisted(_ e: OlanaEvent, semantics: EventSemantics?) -> Bool {
+    /// PRD §1.6: help runs for Always Assist, or Normal mode with Moderate+
+    /// consequence. The user has the last word: an urgency they set decides
+    /// instead of the model.
+    static func isAssisted(_ e: OlanaEvent, semantics: EventSemantics?, mode: AssistMode = .normal) -> Bool {
+        if mode == .always { return true }
         if let override = e.urgencyOverrideRaw.flatMap(EventUrgency.init(rawValue:)) {
             return override != .low
         }
