@@ -50,6 +50,18 @@ struct GEvent: Codable {
     let recurringEventId: String?
     let originalStartTime: GEventDateTime?
     let organizer: GPerson?
+    // Meeting link (spec v3 §6.1 step 6: conferenceData wins over notes)
+    let hangoutLink: String?
+    let conferenceData: GConferenceData?
+}
+
+struct GConferenceData: Codable {
+    let entryPoints: [GEntryPoint]?
+}
+
+struct GEntryPoint: Codable {
+    let entryPointType: String?   // "video", "phone", "sip", "more"
+    let uri: String?
 }
 
 struct GPerson: Codable {

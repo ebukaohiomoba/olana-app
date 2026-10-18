@@ -62,6 +62,7 @@ enum CalendarSyncEngine {
         event.calendarItemID   = ekEvent.calendarItemIdentifier
         event.occurrenceStart  = ekEvent.occurrenceDate
         event.organizer        = SyncMatcher.normalizedOrganizer(ekEvent.organizer?.url.absoluteString)
+        event.meetingURLString = MeetingLinks.eventKitJoinURL(ekEvent.url)?.absoluteString
         applyImportUrgency(to: event, calendarID: ekEvent.calendar.calendarIdentifier,
                            userCalendars: userCalendars)
         return event
@@ -110,6 +111,9 @@ enum CalendarSyncEngine {
         event.seriesID        = gEvent.recurringEventId
         event.occurrenceStart = gEvent.originalStartTime.flatMap(parseGEventDate) ?? start
         event.organizer       = SyncMatcher.normalizedOrganizer(gEvent.organizer?.email)
+        event.meetingURLString = MeetingLinks.googleJoinURL(
+            hangoutLink: gEvent.hangoutLink,
+            entryPoints: (gEvent.conferenceData?.entryPoints ?? []).map { ($0.entryPointType, $0.uri) })?.absoluteString
         applyImportUrgency(to: event, calendarID: calendarEntry.id, userCalendars: userCalendars)
         return event
     }

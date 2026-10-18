@@ -173,6 +173,20 @@ check("guard: digits, time words and long items dropped; duplicates and blanks i
 check("guard: words containing a time word inside are fine", TextGuard.passes("Pick up the daycare forms"))
 check("guard: 'am' as a word is dropped", !TextGuard.passes("Arrive 7 am"))
 
+// MARK: Synced meeting links (spec v3 §6.1 step 6)
+
+check("google: the video entry point wins over hangoutLink, phone ignored",
+      MeetingLinks.googleJoinURL(hangoutLink: "https://meet.google.com/aaa-bbbb-ccc",
+                                 entryPoints: [("phone", "tel:+1-555-0100"), ("video", "https://meet.google.com/xyz-abcd-efg")])
+        == u("https://meet.google.com/xyz-abcd-efg"))
+check("google: hangoutLink when there's no video entry",
+      MeetingLinks.googleJoinURL(hangoutLink: "https://meet.google.com/aaa-bbbb-ccc", entryPoints: []) == u("https://meet.google.com/aaa-bbbb-ccc"))
+check("google: nothing usable, no link", MeetingLinks.googleJoinURL(hangoutLink: nil, entryPoints: [("phone", "tel:+15550100")]) == nil)
+check("eventkit: a Teams join link in the URL field counts",
+      MeetingLinks.eventKitJoinURL(u("https://teams.microsoft.com/l/meetup-join/19%3ameeting_x/0")) != nil)
+check("eventkit: an ordinary web page in the URL field doesn't",
+      MeetingLinks.eventKitJoinURL(u("https://example.com/agenda")) == nil && MeetingLinks.eventKitJoinURL(nil) == nil)
+
 // MARK: Places (PRD v6 §3.4a step 6, §3.14)
 
 import CoreLocation

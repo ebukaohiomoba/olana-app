@@ -653,6 +653,8 @@ private extension OlanaEvent {
         isAllDay         = incoming.isAllDay
         notes            = incoming.notes
         location         = incoming.location
+        // The source owns the join link of a synced event.
+        meetingURLString = incoming.meetingURLString
         calendarName     = incoming.calendarName
         calendarColorHex = incoming.calendarColorHex
         externalEventId  = incoming.externalEventId

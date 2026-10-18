@@ -139,6 +139,22 @@ enum MeetingLinks {
     }
 }
 
+extension MeetingLinks {
+    /// Google's join link: the conferenceData video entry point, else
+    /// hangoutLink. Phone and SIP entries are never the join link.
+    static func googleJoinURL(hangoutLink: String?, entryPoints: [(type: String?, uri: String?)]) -> URL? {
+        let video = entryPoints.first { $0.type == "video" }?.uri
+        return [video, hangoutLink].compactMap { $0 }.compactMap(URL.init(string:)).compactMap(URLGuard.validate).first
+    }
+
+    /// EventKit's URL field holds a join link for many Teams and Zoom invites;
+    /// only a real join link counts.
+    static func eventKitJoinURL(_ url: URL?) -> URL? {
+        guard let url = url.map(URLGuard.unwrap).flatMap(URLGuard.validate), service(of: url) != nil else { return nil }
+        return url
+    }
+}
+
 // MARK: - Notes cleaner
 
 enum NotesCleaner {
