@@ -12,6 +12,7 @@
 import Foundation
 import UserNotifications
 import ActivityKit
+import UIKit
 @preconcurrency import EventKit
 import Combine
 
@@ -486,7 +487,22 @@ class NotificationEngine: ObservableObject {
         let snoozeMedium = UNNotificationAction(identifier: "SNOOZE_MEDIUM", title: snoozeLabel(settings.mediumUrgencySnoozeMinutes), options: [])
         let snoozeHigh   = UNNotificationAction(identifier: "SNOOZE_HIGH",   title: snoozeLabel(settings.highUrgencySnoozeMinutes),   options: [])
 
+        // Execution alerts (spec v3 §7.7). Directions, Open and Join open the app;
+        // the rest run in the background so state updates without opening it.
+        let open       = UNNotificationAction(identifier: "EXEC_OPEN",       title: "Open",         options: [.foreground])
+        let prepDone   = UNNotificationAction(identifier: "EXEC_PREP_DONE",  title: "Prep done",    options: [])
+        let prepSnooze = UNNotificationAction(identifier: "EXEC_PREP_SNOOZE", title: "Snooze 10m",  options: [])
+        let ok         = UNNotificationAction(identifier: "EXEC_OK",         title: "OK",           options: [])
+        let directions = UNNotificationAction(identifier: "EXEC_DIRECTIONS", title: "Directions",   options: [.foreground])
+        let leaving    = UNNotificationAction(identifier: "EXEC_LEAVING",    title: "I'm leaving",  options: [])
+        let fiveMin    = UNNotificationAction(identifier: "EXEC_LEAVE_SNOOZE", title: "5 min",      options: [])
+        let join       = UNNotificationAction(identifier: "EXEC_JOIN",       title: "Join",         options: [.foreground])
+
         center.setNotificationCategories([
+            UNNotificationCategory(identifier: "EXEC_PREP",     actions: [open, prepDone, prepSnooze], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: "EXEC_GETREADY", actions: [ok],                         intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: "EXEC_LEAVE",    actions: [directions, leaving, fiveMin], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: "EXEC_JOIN",     actions: [join],                       intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "EVENT_LOW",    actions: [markDone, snoozeLow],    intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "EVENT_MEDIUM", actions: [markDone, snoozeMedium], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "EVENT_HIGH",   actions: [markDone, snoozeHigh],   intentIdentifiers: [], options: []),
@@ -807,8 +823,14 @@ class NotificationEngine: ObservableObject {
     /// Execution alerts an event wants (prep, get-ready, leave, join). Empty
     /// until M1-C; the namespace, diff and store are in place for it.
     func executionPlan(for event: OlanaEvent, now: Date) -> [AlertSlot] {
-        []
+        guard isAuthorized, settings.allNotificationsEnabled else { return [] }
+        let overrides = overridesProvider?(event) ?? OverrideResolver.resolve(event: nil, series: nil)
+        let e = ExecContext.execEvent(for: event, overrides: overrides, now: now)
+        return ExecutionPlanner.slots(e, settings: ExecContext.settings(), now: now, calendar: calendar)
     }
+
+    /// The store's overrides for an event (set by AppServices, like eventsProvider).
+    var overridesProvider: ((OlanaEvent) -> EffectiveOverrides)?
 
     private static func pendingKey(_ r: UNNotificationRequest) -> AlertPlanner.Pending {
         let fire = (r.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate()
@@ -829,6 +851,12 @@ class NotificationEngine: ObservableObject {
         content.threadIdentifier   = slot.eventID.uuidString
         content.categoryIdentifier = slot.category
         content.interruptionLevel  = resolvedInterruptionLevel(for: profile)
+        if slot.kind == .exec {
+            // Leave, get-ready, prep and join are about a moment, not the event:
+            // time-sensitive so Focus doesn't hold them past it.
+            content.interruptionLevel = .timeSensitive
+            content.sound = .default
+        }
         content.userInfo           = [
             "eventId":           slot.eventID.uuidString,
             "urgency":           slot.urgencyRaw,
@@ -1062,7 +1090,11 @@ class NotificationEngine: ObservableObject {
 
     // MARK: - Handle Actions
 
-    func handleNotificationAction(actionIdentifier: String, eventId: UUID) async {
+    func handleNotificationAction(actionIdentifier: String, eventId: UUID, requestID: String = "") async {
+        if let kind = AlertID.parseExec(requestID)?.kind {
+            await handleExecAction(actionIdentifier, kind: kind, eventId: eventId)
+            return
+        }
         if actionIdentifier == "MARK_DONE" {
             await handleMarkDone(eventId: eventId)
         } else if actionIdentifier.hasPrefix("SNOOZE") {
@@ -1070,6 +1102,88 @@ class NotificationEngine: ObservableObject {
             let urgency: EventUrgency = part == "low" ? .low : (part == "medium" ? .medium : .high)
             await handleSnooze(eventId: eventId, urgency: urgency)
         }
+    }
+
+    // MARK: - Execution actions (spec v3 §7.3, §7.7; PRD v6 §3.9)
+
+    private func handleExecAction(_ action: String, kind: ExecKind, eventId: UUID) async {
+        guard let event = eventsProvider?()?.first(where: { $0.id == eventId }) else { return }
+        let key = event.overrideEventKey
+        let overrides = overridesProvider?(event) ?? OverrideResolver.resolve(event: nil, series: nil)
+        let now = Date()
+        func progress(_ change: (inout EventProgress) -> Void) {
+            EventProgressStore.shared.update(key, eventStart: event.start, change)
+        }
+        switch action {
+        case "EXEC_PREP_DONE":
+            progress { $0.prepDone = true }
+            PlusStore.shared.record(.prepStarted, eventKey: key)
+        case "EXEC_PREP_SNOOZE":
+            await scheduleSnoozeNotification(for: event, snoozeMinutes: 10)
+        case "EXEC_OK":
+            PlusStore.shared.record(.gotReady, eventKey: key)
+        case "EXEC_LEAVING", "EXEC_DIRECTIONS":
+            await markLeaving(event, overrides: overrides, now: now)
+            if action == "EXEC_DIRECTIONS" { openDirections(event, overrides: overrides) }
+        case "EXEC_LEAVE_SNOOZE":
+            let e = ExecContext.execEvent(for: event, overrides: overrides, now: now)
+            let so = EventProgressStore.shared.get(key).leaveSnoozes ?? 0
+            if let slot = ExecutionPlanner.leaveSnooze(e, snoozesSoFar: so, now: now, calendar: calendar) {
+                try? await center.add(request(for: slot))
+                progress { $0.leaveSnoozes = so + 1 }
+            }
+        case "EXEC_JOIN":
+            progress { $0.joinedAt = now }
+            if let url = ExecContext.trip(for: event, overrides: overrides, now: now).times.isVirtual
+                ? (event.meetingURL ?? NotesCleaner.clean(notes: event.notes, location: event.location).meetingURL) : nil {
+                await UIApplication.shared.open(url)
+            }
+            // Join tapped: the rest of the floor goes (PRD v6 §1.4, principle 7).
+            await cancelNotifications(for: eventId)
+        case UNNotificationDefaultActionIdentifier:
+            // Tapping the alert is acting on it (a Plus moment, PRD v6 §1.10).
+            switch kind {
+            case .leave, .leaveSnooze: PlusStore.shared.record(.leftOnTime, eventKey: key)
+            case .getReady: PlusStore.shared.record(.gotReady, eventKey: key)
+            case .prep: PlusStore.shared.record(.prepStarted, eventKey: key)
+            case .join: break
+            }
+        default: break
+        }
+        requestReplan("exec action")
+    }
+
+    /// "I'm leaving": on the way, departure metrics, and only the floor
+    /// reminders before the start and the leave snoozes are removed (PRD v6 §3.9).
+    func markLeaving(_ event: OlanaEvent, overrides: EffectiveOverrides, now: Date = Date()) async {
+        let key = event.overrideEventKey
+        let trip = ExecContext.trip(for: event, overrides: overrides, now: now)
+        let eta = ETAStore.shared.get(key)?.reading.seconds
+        EventProgressStore.shared.update(key, eventStart: event.start) { p in
+            p.leftAt = now
+            p.leaveByAtDeparture = trip.times.leaveBy
+            p.etaAtDeparture = eta
+        }
+        PlusStore.shared.record(.leftOnTime, eventKey: key)
+        let pending = await center.pendingNotificationRequests()
+        let ids = pending.filter { r in
+            guard r.content.userInfo["eventId"] as? String == event.id.uuidString else { return false }
+            if AlertID.parseExec(r.identifier)?.kind == .leaveSnooze { return true }
+            guard AlertID.isPlannedFloor(r.identifier) || r.identifier.hasPrefix(AlertID.floorPrefix) else { return false }
+            let fire = (r.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate()
+                ?? (r.trigger as? UNTimeIntervalNotificationTrigger)?.nextTriggerDate()
+            return (fire ?? .distantFuture) < event.start
+        }.map(\.identifier)
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        DeliveryLedger.shared.forget { ids.contains($0) }
+    }
+
+    func openDirections(_ event: OlanaEvent, overrides: EffectiveOverrides) {
+        guard let place = overrides.place ?? event.resolvedPlace else { return }
+        var a = URLComponents(string: "https://maps.apple.com/")!
+        a.queryItems = [URLQueryItem(name: "daddr", value: "\(place.latitude),\(place.longitude)"),
+                        URLQueryItem(name: "q", value: place.name)]
+        if let url = a.url { UIApplication.shared.open(url) }
     }
 
     private func handleMarkDone(eventId: UUID) async {

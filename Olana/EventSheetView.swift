@@ -53,9 +53,11 @@ struct EventSheetView: View {
             overrides: overrides, userSteps: event.prepItems, userBring: event.bringItems,
             arriveEarlyMinutes: event.arriveEarlyMinutes,
             attendance: event.attendanceRaw.flatMap(AssistAttendance.init(rawValue:)),
-            place: event.resolvedPlace,
+            attendanceAnswer: overrides.attendance,
+            place: overrides.travelNotNeeded ? nil : (overrides.place ?? event.resolvedPlace),
             actBy: prep > 0 ? event.start.addingTimeInterval(-prep * 3600) : nil,
-            eta: nil,
+            eta: ETAStore.shared.get(event.overrideEventKey).flatMap { ETAFreshness.effective($0.reading, start: event.start, now: now) },
+            travelMode: overrides.travelMode.flatMap(TravelMode.init(rawValue:)) ?? ExecPreferences.defaultMode,
             checkedSteps: Set(progress.checkedSteps),
             state: PhaseState(finished: event.completed || progress.finished, onTheWay: progress.onTheWay,
                               prepDone: progress.prepDone),
@@ -447,11 +449,13 @@ struct EventSheetView: View {
     }
 
     private func leave() {
-        update { p in p.leftAt = Date() }
-        moment(.leftOnTime)
-        // Leaving cancels the pending leave alert and its snoozes, and floor
-        // reminders before the start (PRD v6 §3.6, scenario 19).
-        Task { await NotificationEngine.shared.cancelNotifications(for: event.id) }
+        // On the way; removes the floor reminders before the start and the leave
+        // snoozes only (PRD v6 §3.9), records the departure for the metrics.
+        Task {
+            await NotificationEngine.shared.markLeaving(event, overrides: overrides)
+            progress = EventProgressStore.shared.get(event.overrideEventKey)
+            NotificationEngine.shared.requestReplan("leaving")
+        }
     }
 
     private func arrive() { update { $0.arrivedAt = Date() } }

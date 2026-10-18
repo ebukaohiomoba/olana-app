@@ -22,6 +22,9 @@ final class AssistOverride {
     var travelMode: String? = nil
     var arriveEarlyMinutes: Int? = nil
     var hiddenHelpersText: String? = nil
+    var attendanceRaw: String? = nil
+    var placeJSON: String? = nil
+    var travelNotNeeded: Bool? = nil
     var version: Int = 0
     var updatedAt: Date = Date()
 
@@ -36,7 +39,10 @@ final class AssistOverride {
         }
         return OverrideValues(assistMode: assistModeRaw.flatMap(AssistMode.init(rawValue:)),
                               steps: list(stepsText), bring: list(bringText), origin: origin, travelMode: travelMode,
-                              arriveEarlyMinutes: arriveEarlyMinutes, hiddenHelpers: list(hiddenHelpersText), version: version)
+                              arriveEarlyMinutes: arriveEarlyMinutes, hiddenHelpers: list(hiddenHelpersText),
+                              attendance: attendanceRaw.flatMap(AssistAttendance.init(rawValue:)),
+                              place: placeJSON.flatMap { try? JSONDecoder().decode(ResolvedPlace.self, from: Data($0.utf8)) },
+                              travelNotNeeded: travelNotNeeded, version: version)
     }
 
     func apply(_ v: OverrideValues) {
@@ -47,6 +53,9 @@ final class AssistOverride {
         travelMode = v.travelMode
         arriveEarlyMinutes = v.arriveEarlyMinutes
         hiddenHelpersText = v.hiddenHelpers?.joined(separator: "\n")
+        attendanceRaw = v.attendance?.rawValue
+        placeJSON = v.place.flatMap { try? JSONEncoder().encode($0) }.flatMap { String(data: $0, encoding: .utf8) }
+        travelNotNeeded = v.travelNotNeeded
         version += 1
         updatedAt = Date()
     }

@@ -53,7 +53,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             Task { @MainActor in
                 await NotificationEngine.shared.handleNotificationAction(
                     actionIdentifier: response.actionIdentifier,
-                    eventId: eventId
+                    eventId: eventId,
+                    requestID: response.notification.request.identifier
                 )
             }
         }

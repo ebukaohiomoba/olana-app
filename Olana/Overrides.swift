@@ -42,11 +42,17 @@ struct OverrideValues: Equatable, Codable {
     var travelMode: String?        // "driving", "walking", "transit"
     var arriveEarlyMinutes: Int?   // launch tier, kept here so it has a home
     var hiddenHelpers: [String]?
+    /// "In person or online?" answer (spec v3 §7.2).
+    var attendance: AssistAttendance?
+    /// "Where is this?" answer (spec v3 §7.9), saved for the series.
+    var place: ResolvedPlace?
+    /// "Not needed": no travel help for the series.
+    var travelNotNeeded: Bool?
     var version = 0
 
     var isEmpty: Bool {
         assistMode == nil && steps == nil && bring == nil && origin == nil && travelMode == nil
-            && arriveEarlyMinutes == nil && hiddenHelpers == nil
+            && arriveEarlyMinutes == nil && hiddenHelpers == nil && attendance == nil && place == nil && travelNotNeeded == nil
     }
 }
 
@@ -59,6 +65,9 @@ struct EffectiveOverrides: Equatable {
     var travelMode: String?
     var arriveEarlyMinutes: Int?
     var hiddenHelpers: Set<String>
+    var attendance: AssistAttendance?
+    var place: ResolvedPlace?
+    var travelNotNeeded: Bool
     /// Series then event version, for the EventAssist cache key and the plan version.
     var versions: [Int]
     /// Where the steps came from, for the sheet's "Saved for this series" note.
@@ -75,6 +84,7 @@ enum OverrideResolver {
             steps: pick(\.steps), bring: pick(\.bring), origin: pick(\.origin), travelMode: pick(\.travelMode),
             arriveEarlyMinutes: pick(\.arriveEarlyMinutes),
             hiddenHelpers: Set(pick(\.hiddenHelpers) ?? []),
+            attendance: pick(\.attendance), place: pick(\.place), travelNotNeeded: pick(\.travelNotNeeded) ?? false,
             versions: [s?.version ?? 0, e?.version ?? 0],
             stepsScope: e?.steps != nil ? .event : (s?.steps != nil ? .series : nil),
             bringScope: e?.bring != nil ? .event : (s?.bring != nil ? .series : nil))

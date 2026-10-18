@@ -30,5 +30,8 @@ final class AppServices {
         // a short-lived store (a preview) can't leave it pointing at nothing.
         let store = store
         NotificationEngine.shared.eventsProvider = { [weak store] in store?.events }
+        NotificationEngine.shared.overridesProvider = { [weak store] e in
+            store?.effectiveOverrides(for: e) ?? OverrideResolver.resolve(event: nil, series: nil)
+        }
     }
 }
