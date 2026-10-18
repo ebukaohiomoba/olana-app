@@ -58,6 +58,8 @@ struct NextCard: Equatable {
     /// The smaller second line: the next action after this one, when there is
     /// one within 2 h (PRD v6 §1.7). "Next: Pick up prescription · starts at 5:30"
     var secondary: String? = nil
+    /// At most one inline action under the runway (spec v3 §14.8).
+    var action: CardAction? = nil
 
     struct Runway: Equatable {
         let from: Date          // left edge; holds still so the fill advances
@@ -98,6 +100,30 @@ struct NextCard: Equatable {
                      "\(HomeFormat.clock(start)) to \(HomeFormat.clock(end))"]
         if let secondary { parts.append(secondary) }
         return parts.joined(separator: ", ")
+    }
+}
+
+/// The card's one inline action (spec v3 §14.8): the one that moves the phase
+/// forward, else the question this event is waiting on.
+enum CardAction: Equatable {
+    case imLeaving, imHere, prepDone, join
+    /// §7.9: no usable place, looks like travel. Opens a text field; Online and
+    /// Not needed are shortcuts.
+    case whereIsThis
+    /// §7.2: a place and a link, nobody said which.
+    case inPersonOrOnline
+    /// §7.8: refused or placeholder; Yes = Always Assist, No = No Execution Alerts.
+    case isImportant
+
+    /// The question for an event, from what's known (pure, tested in HomeChecks).
+    /// Phase actions come first in `HomeDayBuilder.card`; this is the fallback.
+    static func question(unranked: Bool, modeChosen: Bool, asksAttendance: Bool, assisted: Bool, start: Date, now: Date,
+                         hasUsablePlace: Bool, hasLink: Bool, looksLikeTravel: Bool, travelNotNeeded: Bool) -> CardAction? {
+        if unranked && !modeChosen { return .isImportant }
+        if asksAttendance { return .inPersonOrOnline }
+        if assisted, start > now, start.timeIntervalSince(now) <= 24 * 3600, !hasUsablePlace, !hasLink,
+           looksLikeTravel, !travelNotNeeded { return .whereIsThis }
+        return nil
     }
 }
 
@@ -183,6 +209,8 @@ enum HomeDayBuilder {
         /// Plus phases (leave-by, get ready, leave, prep timing) show their
         /// time only with Plus; free shows the start (PRD v6 §1.10).
         var hasPlus = true
+        /// The question this event is waiting on (CardAction.question).
+        var question: CardAction? = nil
     }
 
     static let runwayHorizon: TimeInterval = 12 * 3600
@@ -400,6 +428,16 @@ enum HomeDayBuilder {
             detail += " · \(place)"
         }
 
+        // One inline action: the phase's own, else the open question.
+        let phaseAction: CardAction? = {
+            switch phase {
+            case .join: return .join
+            case .getReady, .leave: return .imLeaving
+            case .onTheWay: return .imHere
+            case .prepNow: return e.hasPlus ? .prepDone : nil
+            default: return nil
+            }
+        }()
         return NextCard(eventID: e.id, title: e.title, urgency: urgency,
                         start: e.start, end: e.end, place: e.location,
                         phase: standing.phase, lead: lead, gold: gold, trail: trail,
@@ -407,7 +445,8 @@ enum HomeDayBuilder {
                         runway: runway(start: e.start, prepFrom: prepFrom, now: now,
                                        prepTo: prepFrom == nil ? nil : t.prepDeadline,
                                        leave: e.hasPlus ? t.leaveBy : nil, travelFrom: e.hasPlus ? t.getReadyAt : nil,
-                                       join: t.isVirtual ? t.joinOpen : nil))
+                                       join: t.isVirtual ? t.joinOpen : nil),
+                        action: phaseAction ?? e.question)
     }
 
     /// Ticks only for phases that exist (spec §14.3). M1-B has no leave or join,

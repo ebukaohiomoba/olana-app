@@ -224,5 +224,26 @@ expect("runway: a room never gets a leave tick", roomRw.map { !$0.ticks.contains
 expect("runway: virtual gets a join tick", cardOf([execEv("Recruiter screen", callT)], now: at(14, 30))?.runway?.ticks.contains { $0.kind == .join } == true)
 expect("card: done (I'm here) drops off", cardOf([execEv("Client review", tripB1, state: .init(finished: true))], now: at(14, 40)) == nil)
 
+// The card's one inline action (spec v3 §14.8).
+expect("action: GET READY and LEAVE offer I'm leaving", cardOf([execEv("Client review", tripB1)], now: at(14, 27))?.action == .imLeaving
+       && cardOf([execEv("Client review", tripB1)], now: at(14, 32))?.action == .imLeaving)
+expect("action: ON THE WAY offers I'm here", cardOf([execEv("Client review", tripB1, state: .init(onTheWay: true))], now: at(14, 33))?.action == .imHere)
+expect("action: PREP NOW offers Prep done (Plus)", cardOf([execEv("Client review", tripB1)], now: at(13, 40))?.action == .prepDone
+       && cardOf([execEv("Client review", tripB1, plus: false)], now: at(13, 40))?.action == nil)
+expect("action: JOIN offers Join", cardOf([execEv("Recruiter screen", callT)], now: at(14, 56))?.action == .join)
+var asking = execEv("Client sync", times(.inPerson, travel: true, eta: 14)); asking.question = .inPersonOrOnline
+expect("action: a waiting question shows when the phase has no action", cardOf([asking], now: at(11, 0))?.action == .inPersonOrOnline)
+func q(unranked: Bool = false, chosen: Bool = false, asks: Bool = false, assisted: Bool = true, start: Date = at(15, 0), now: Date = at(11, 0),
+       place: Bool = false, link: Bool = false, travel: Bool = true, notNeeded: Bool = false) -> CardAction? {
+    CardAction.question(unranked: unranked, modeChosen: chosen, asksAttendance: asks, assisted: assisted, start: start, now: now,
+                        hasUsablePlace: place, hasLink: link, looksLikeTravel: travel, travelNotNeeded: notNeeded)
+}
+expect("question: unranked asks 'Is this important?' until a mode is chosen", q(unranked: true) == .isImportant && q(unranked: true, chosen: true) == .whereIsThis)
+expect("question: hybrid unsure asks in person or online", q(asks: true) == .inPersonOrOnline)
+expect("question: 'Where is this?' for assisted travel within 24 h with no place or link (B13)", q() == .whereIsThis)
+expect("question: not beyond 24 h, not with a place or link, not for minor, not after 'Not needed' (B14)",
+       q(start: at(15, 0, day: 2)) == nil && q(place: true) == nil && q(link: true) == nil && q(assisted: false) == nil
+         && q(notNeeded: true) == nil && q(travel: false) == nil)
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

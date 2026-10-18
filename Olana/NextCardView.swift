@@ -13,11 +13,14 @@ import SwiftUI
 struct NextCardView: View {
     let card: NextCard
     var onTap: () -> Void = {}
+    /// The inline action (spec v3 §14.8); the String carries "Where is this?" text.
+    var onAction: (CardAction, String?) -> Void = { _, _ in }
 
     @Environment(\.homePalette) private var c
     @ScaledMetric(relativeTo: .title) private var l1Size: CGFloat = 30
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 0) {
                 Text("● NEXT THAT MATTERS")
@@ -66,16 +69,88 @@ struct NextCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .multilineTextAlignment(.leading)
-            .padding(EdgeInsets(top: 16, leading: 16, bottom: 14, trailing: 16))
-            .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(c.card))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(c.line, lineWidth: 1))
-            .shadow(color: c.cardShadow, radius: 15, x: 0, y: 10)
+            .padding(EdgeInsets(top: 16, leading: 16, bottom: card.action == nil ? 14 : 8, trailing: 16))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(card.accessibilityLabel)
         .accessibilityValue(card.runway?.accessibilityText ?? "")
         .accessibilityAddTraits(.isButton)
+
+            // Outside the card's button, so its own buttons work.
+            if let action = card.action {
+                CardActionRow(action: action, title: card.title, onAction: onAction)
+                    .padding(EdgeInsets(top: 0, leading: 16, bottom: 14, trailing: 16))
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(c.card))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(c.line, lineWidth: 1))
+        .shadow(color: c.cardShadow, radius: 15, x: 0, y: 10)
+    }
+}
+
+/// One inline action (spec v3 §14.8). No mockup yet: plain, quiet controls
+/// that match the card until the design lands.
+struct CardActionRow: View {
+    let action: CardAction
+    let title: String
+    var onAction: (CardAction, String?) -> Void
+    @Environment(\.homePalette) private var c
+    @State private var whereText = ""
+
+    var body: some View {
+        switch action {
+        case .imLeaving: pill("I'm leaving") { onAction(.imLeaving, nil) }
+        case .imHere: pill("I'm here") { onAction(.imHere, nil) }
+        case .prepDone: pill("Prep done") { onAction(.prepDone, nil) }
+        case .join: pill("Join", gold: true) { onAction(.join, nil) }
+        case .inPersonOrOnline:
+            HStack(spacing: 8) {
+                Text("In person or online?").font(.footnote).foregroundStyle(c.muted)
+                Spacer()
+                pill("In person") { onAction(.inPersonOrOnline, "inPerson") }
+                pill("Online") { onAction(.inPersonOrOnline, "virtual") }
+            }
+        case .isImportant:
+            HStack(spacing: 8) {
+                Text("Is this important?").font(.footnote).foregroundStyle(c.muted)
+                Spacer()
+                pill("Yes") { onAction(.isImportant, "yes") }
+                pill("No") { onAction(.isImportant, "no") }
+            }
+        case .whereIsThis:
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "mappin.and.ellipse").font(.footnote).foregroundStyle(c.muted)
+                    TextField("Where is this?", text: $whereText)
+                        .font(.subheadline)
+                        .submitLabel(.done)
+                        .onSubmit {
+                            let t = whereText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !t.isEmpty { onAction(.whereIsThis, t); whereText = "" }
+                        }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Capsule().fill(c.card2))
+                HStack(spacing: 8) {
+                    pill("Online") { onAction(.whereIsThis, "online") }
+                    pill("Not needed") { onAction(.whereIsThis, "not needed") }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Where is \(title)?")
+        }
+    }
+
+    private func pill(_ t: String, gold: Bool = false, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(t).font(.subheadline.weight(.semibold))
+                .foregroundStyle(gold ? c.onGold : c.text)
+                .padding(.horizontal, 14).frame(minHeight: 36)
+                .background(Capsule().fill(gold ? c.gold : c.card2))
+        }
+        .buttonStyle(.plain)
     }
 }
 

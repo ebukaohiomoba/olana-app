@@ -30,6 +30,11 @@ struct HomeView: View {
     /// The event sheet (PRD v3 §1.7 Job 4); its Edit opens the edit panel.
     @State private var sheetEvent: OlanaEvent?
     @State private var editAfterSheet: OlanaEvent?
+    /// Bumped by a card action so the card redraws before the next minute.
+    @State private var actionTick = 0
+    /// "Which one?" for a "Where is this?" answer with several matches.
+    @State private var placeChoice: (event: OlanaEvent, options: [ResolvedPlace])?
+    @State private var placeNotFound = false
 
     // Delete confirmation for recurring events
     @State private var pendingDeleteID: UUID?
@@ -45,11 +50,13 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             TimelineView(.everyMinute) { context in
+                let _ = actionTick
                 let day = buildDay(now: context.date)
                 ScrollView {
                     HomeScreenContent(day: day,
                                       syncText: syncText(now: context.date, alwaysShow: day.isOpen),
                                       onSelect: { open($0) },
+                                      onAction: { act($0, $1, $2) },
                                       onToggleDone: { toggleDone($0) },
                                       onDelete: { handleDeleteIntent(id: $0, isRecurring: $1) })
                 }
@@ -113,6 +120,20 @@ struct HomeView: View {
                 @unknown default:
                     break
                 }
+            }
+            .confirmationDialog("Which one?", isPresented: Binding(get: { placeChoice != nil },
+                                                                   set: { if !$0 { placeChoice = nil } }), titleVisibility: .visible) {
+                if let choice = placeChoice {
+                    ForEach(choice.options, id: \.self) { p in
+                        Button([p.name, p.address].compactMap { $0 }.joined(separator: " · ")) { savePlace(choice.event, p) }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .alert("Couldn't find that place", isPresented: $placeNotFound) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Try the name and street, like \"Smile Dental on 23rd\".")
             }
             .sheet(item: $sheetEvent, onDismiss: {
                 if let e = editAfterSheet { editAfterSheet = nil; editingEvent = e }
@@ -199,7 +220,87 @@ struct HomeView: View {
             i.tripPhrase = "\(ETAFreshness.phrase(eta.seconds, mode: mode)) from \(stored.originName)"
         }
         i.hasPlus = PlusAccess.hasPlus
+        // The question this event waits on (spec §7.2, §7.8, §7.9).
+        let assist = ExecContext.cachedAssist(for: e, facts: NotesCleaner.clean(notes: e.isFromExternalCalendar ? e.notes : nil,
+                                                                              location: e.location, conferenceURL: e.meetingURL),
+                                              overrides: ov)
+        i.question = CardAction.question(
+            unranked: e.isUnrankable, modeChosen: ov.assistMode != .normal, asksAttendance: trip.asksAttendance,
+            assisted: i.assisted, start: e.start, now: now,
+            hasUsablePlace: trip.geocodable || trip.roomish || ov.place != nil,
+            hasLink: e.meetingURL != nil || trip.attendance == .virtual,
+            looksLikeTravel: !e.isTask && (e.likelyNeedsTravel ?? assist?.needsTravel ?? false),
+            travelNotNeeded: ov.travelNotNeeded)
         return i
+    }
+
+    // MARK: - Card actions (spec v3 §14.8)
+
+    private func act(_ id: UUID, _ action: CardAction, _ text: String?) {
+        guard let e = store.events.first(where: { $0.id == id }) else { return }
+        let ov = store.effectiveOverrides(for: e)
+        let key = e.overrideEventKey
+        func progress(_ change: (inout EventProgress) -> Void) {
+            EventProgressStore.shared.update(key, eventStart: e.start, change)
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        switch action {
+        case .imLeaving:
+            Task {
+                await NotificationEngine.shared.markLeaving(e, overrides: ov)
+                NotificationEngine.shared.requestReplan("leaving")
+                actionTick += 1
+            }
+        case .imHere:
+            progress { $0.arrivedAt = Date() }
+            Task { await NotificationEngine.shared.cancelNotifications(for: e.id) }
+        case .prepDone:
+            progress { $0.prepDone = true }
+            PlusStore.shared.record(.prepStarted, eventKey: key)
+            NotificationEngine.shared.requestReplan("prep done")
+        case .join:
+            progress { $0.joinedAt = Date() }
+            let link = e.meetingURL ?? NotesCleaner.clean(notes: e.notes, location: e.location).meetingURL
+            if let link { UIApplication.shared.open(link) }
+            Task { await NotificationEngine.shared.cancelNotifications(for: e.id) }
+        case .inPersonOrOnline:
+            store.updateOverride(for: e, scope: .series) { $0.attendance = text == "virtual" ? .virtual : .inPerson }
+        case .isImportant:
+            store.updateOverride(for: e, scope: .series) { $0.assistMode = text == "yes" ? .always : .noAlerts }
+        case .whereIsThis:
+            answerWhere(e, text ?? "")
+        }
+        actionTick += 1
+    }
+
+    /// "Where is this?" (spec §7.9): Online and Not needed are shortcuts; other
+    /// words go through MapKit near the origin. Saved for the series, never
+    /// written back to the calendar.
+    private func answerWhere(_ e: OlanaEvent, _ text: String) {
+        switch CaptureCode.squash(text) {
+        case "online":
+            store.updateOverride(for: e, scope: .series) { $0.attendance = .virtual }
+        case "not needed":
+            store.updateOverride(for: e, scope: .series) { $0.travelNotNeeded = true }
+        default:
+            Task {
+                switch await PlaceResolver.shared.resolve(text) {
+                case .resolved(let p): savePlace(e, p)
+                case .choose(let options): placeChoice = (e, options)
+                case .personal, .none: placeNotFound = true
+                }
+            }
+        }
+    }
+
+    private func savePlace(_ e: OlanaEvent, _ p: ResolvedPlace) {
+        store.updateOverride(for: e, scope: .series) { $0.place = p; $0.attendance = .inPerson }
+        Task {
+            let ov = store.effectiveOverrides(for: e)
+            await TravelService.shared.refresh(e, events: store.events, overrides: ov)
+            NotificationEngine.shared.requestReplan("place answered")
+            actionTick += 1
+        }
     }
 
     /// PRD §1.6: help runs for Always Assist, or Normal mode with Moderate+
@@ -346,6 +447,7 @@ struct HomeScreenContent: View {
     let day: HomeDay
     let syncText: Sync?
     var onSelect: (UUID) -> Void = { _ in }
+    var onAction: (UUID, CardAction, String?) -> Void = { _, _, _ in }
     var onToggleDone: (UUID) -> Void = { _ in }
     var onDelete: (UUID, Bool) -> Void = { _, _ in }
 
@@ -362,7 +464,8 @@ struct HomeScreenContent: View {
                 OpenDayView(day: day, onSelect: onSelect)
             } else {
                 if let card = day.card {
-                    NextCardView(card: card) { onSelect(card.eventID) }
+                    NextCardView(card: card, onTap: { onSelect(card.eventID) },
+                                 onAction: { onAction(card.eventID, $0, $1) })
                         .padding(.bottom, 16)
                 }
                 DayRailView(day: day, onSelect: onSelect,
