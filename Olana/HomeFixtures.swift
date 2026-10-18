@@ -156,19 +156,35 @@ struct HomeFixtureScreen: View {
         @Environment(\.homePalette) private var c
 
         var body: some View {
+            OlanaTabView(selection: $tab, onAdd: {}) {
+                content
+            } calendar: { c.bg } circles: { c.bg } settings: { c.bg }
+        }
+
+        private var content: some View {
             ScrollView {
-                if HomeFixtures.requested == "rail" {
+                if HomeFixtures.requested == "glass" {
+                    // `-homeFixture glass`: long, colorful content, so at rest
+                    // something is always sliding under the bar.
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(0..<14, id: \.self) { i in
+                            HStack(spacing: 12) {
+                                [Color.red, .blue, .green, .orange, .purple, .black][i % 6]
+                                    .frame(width: 60, height: 44).clipShape(.rect(cornerRadius: 8))
+                                Text(["Gym · until 8:00", "Call mom · until 9:00", "1h free, then wind down", "Read · until 10:00"][i % 4])
+                                    .font(.title3)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 22)
+                } else if HomeFixtures.requested == "rail" {
                     DayRailView(day: day).padding(.horizontal, 22)
                 } else {
                     HomeScreenContent(day: day, syncText: day.isOpen
                                       ? .init(text: "Apple Calendar and Google synced 2 min ago", fresh: true) : nil)
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: OlanaTabBar.height - 20) }
             .background(c.bg.ignoresSafeArea())
-            .overlay(alignment: .bottom) {
-                OlanaTabBar(selection: $tab) {}.padding(.bottom, 4)
-            }
         }
     }
 }

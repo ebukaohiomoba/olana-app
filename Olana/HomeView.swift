@@ -12,7 +12,7 @@
 //
 //  M1-B removed from home: greeting, Olu, the progress card (XP, streak, grace
 //  tokens), the imminent card, the day strip and navigator, the event list and
-//  the floating add button (now the raised + in OlanaTabBar). Their data stays.
+//  the floating add button (now Add in the tab bar). Their data stays.
 //
 
 import SwiftUI

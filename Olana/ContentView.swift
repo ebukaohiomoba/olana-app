@@ -2,8 +2,8 @@
 //  ContentView.swift
 //  Olana
 //
-//  Tabs with Olana's own bar (OlanaTabBar): the system bar is hidden on every
-//  tab, and the raised + replaces home's floating add button.
+//  The system tab bar (OlanaTabView): four screens and Add, the trailing
+//  glass button that opens the add sheet.
 //
 
 import SwiftUI
@@ -25,35 +25,22 @@ struct ContentView: View {
     ]
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        OlanaTabView(selection: $selectedTab, onAdd: { showingAdd = true }) {
             HomeView()
                 .environmentObject(store)
                 .environmentObject(calendarManager)
                 .environmentObject(calendarDataStore)
-                .modifier(CustomTabBarSpace())
-                .tag(OlanaTab.home)
-
+        } calendar: {
             CalendarView()
                 .environmentObject(store)
                 .environmentObject(calendarManager)
-                .modifier(CustomTabBarSpace())
-                .tag(OlanaTab.calendar)
-
+        } circles: {
             FriendsView()
-                .modifier(CustomTabBarSpace())
-                .tag(OlanaTab.circles)
-
+        } settings: {
             SettingsView()
                 .environmentObject(store)
                 .environmentObject(calendarManager)
                 .environmentObject(calendarDataStore)
-                .modifier(CustomTabBarSpace())
-                .tag(OlanaTab.settings)
-        }
-        .overlay(alignment: .bottom) {
-            OlanaTabBar(selection: $selectedTab) { showingAdd = true }
-                .padding(.bottom, 4)
-                .ignoresSafeArea(.keyboard)
         }
         .homePalette()
         .sheet(isPresented: $showingAdd) {
@@ -81,18 +68,6 @@ struct ContentView: View {
         .onAppear {
             OlanaAnalytics.tabViewed(.home)
         }
-    }
-}
-
-/// Hides the system tab bar and reserves room for OlanaTabBar, so scrolling
-/// content ends above it rather than under it.
-private struct CustomTabBarSpace: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .toolbar(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: OlanaTabBar.height - 20)
-            }
     }
 }
 
