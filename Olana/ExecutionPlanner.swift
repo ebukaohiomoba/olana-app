@@ -48,6 +48,7 @@ struct ExecSettings: Equatable {
     var prep = true
     var getReady = true
     var leave = true
+    var join = true
     var quiet: QuietHours?
     var hasPlus = true
     var settingsVersion = 0
@@ -149,7 +150,7 @@ enum ExecutionPlanner {
         }
 
         // Join (free): virtual with a link, Critical only, start − 1 min.
-        if t.isVirtual, e.critical || e.mode == .always, e.progress.joinedAt == nil {
+        if s.join, t.isVirtual, e.critical || e.mode == .always, e.progress.joinedAt == nil {
             let fire = t.start.addingTimeInterval(-60)
             if fire > now, !quiet(fire) || e.critical {
                 out.append(slot(.join, fire, "\(e.title) starts in 1 min", "EXEC_JOIN", index: 2))

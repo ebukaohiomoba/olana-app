@@ -254,5 +254,12 @@ check("summary: a miss resets the run and keeps its reason",
 sum.add(at: h(24 * 9 + 1), missing: 0, reason: nil)
 check("summary: the next clean check starts a new run", sum.cleanSince == h(24 * 9 + 1) && sum.since == h(0))
 
+// Reminder schedule (Settings › Notifications): one at the lead; Critical also
+// the evening before and an hour before. Unknown leads fall back to 15.
+check("reminders: every event gets one at the lead", ReminderSchedule.moments(important: false, lead: 30) == [.before(30)])
+check("reminders: important adds the evening before and an hour before",
+      ReminderSchedule.moments(important: true, lead: 10) == [.clock(hour: 18, minute: 0, daysBefore: 1), .before(60), .before(10)])
+check("reminders: an unknown lead falls back to 15", ReminderSchedule.moments(important: false, lead: 7) == [.before(15)])
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

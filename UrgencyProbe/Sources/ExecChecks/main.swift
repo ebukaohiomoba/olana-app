@@ -149,6 +149,8 @@ var noPlus = s; noPlus.hasPlus = false
 check("free: no prep, get-ready or leave alerts", ExecutionPlanner.slots(ev(b1), settings: noPlus, now: at(11, 0), calendar: cal).isEmpty)
 let joinSlots = ExecutionPlanner.slots(ev(virt), settings: noPlus, now: at(11, 0), calendar: cal)
 check("join: Critical virtual, start − 1 min, free", joinSlots.map(\.fireDate) == [at(14, 59)] && joinSlots.first?.body == "Client review starts in 1 min")
+var noJoin = noPlus; noJoin.join = false
+check("toggles: Join off removes the join alert", ExecutionPlanner.slots(ev(virt), settings: noJoin, now: at(11, 0), calendar: cal).isEmpty)
 var toggles = s; toggles.leave = false
 check("toggles: Leave off removes the leave alert", ExecutionPlanner.slots(ev(b1), settings: toggles, now: at(11, 0), calendar: cal).count == 1)
 

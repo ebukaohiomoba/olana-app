@@ -333,3 +333,27 @@ final class DeliveryLedger: @unchecked Sendable {
         defaults.set(value, forKey: key)
     }
 }
+
+// MARK: - Reminder schedule (the floor's timing)
+
+/// When an event's reminders fire (Settings › Notifications). Every event gets
+/// one at the user's lead; important (Critical) events also get the evening
+/// before and an hour before. Urgency decides this; the user doesn't tune it
+/// per tier.
+enum ReminderSchedule {
+    static let leadOptions = [10, 15, 30]
+    static let defaultLead = 15
+
+    enum Moment: Equatable {
+        /// Minutes before the start.
+        case before(Int)
+        /// A clock time some days before (18:00 the day before).
+        case clock(hour: Int, minute: Int, daysBefore: Int)
+    }
+
+    static func moments(important: Bool, lead: Int) -> [Moment] {
+        let lead = leadOptions.contains(lead) ? lead : defaultLead
+        guard important else { return [.before(lead)] }
+        return [.clock(hour: 18, minute: 0, daysBefore: 1), .before(60), .before(lead)]
+    }
+}

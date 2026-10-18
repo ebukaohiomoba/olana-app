@@ -3,9 +3,9 @@
 //  Olana
 //
 //  Settings › Getting there (spec v3 §7.5, §7.7): home and work (found with
-//  MapKit), work hours, the default way of getting around, and the new
-//  Prep / Get ready / Leave alert toggles. Also opened just in time from the
-//  sheet when a travel event has nowhere to leave from.
+//  MapKit), work hours, the default way of getting around and the maps app.
+//  The Prep / Get ready / Leave / Join toggles live in Notifications. Also
+//  opened just in time from the card and the sheet.
 //
 
 import SwiftUI
@@ -13,15 +13,13 @@ import UIKit
 
 struct TravelSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.homePalette) private var c
     @State private var home = SavedPlaces.home
     @State private var work = SavedPlaces.work
     @State private var mode = ExecPreferences.defaultMode
     @State private var hasHours = ExecPreferences.workHours != nil
     @State private var hoursStart = Self.time(ExecPreferences.workHours?.startMinute ?? 9 * 60)
     @State private var hoursEnd = Self.time(ExecPreferences.workHours?.endMinute ?? 17 * 60)
-    @State private var prep = ExecPreferences.prepAlerts
-    @State private var getReady = ExecPreferences.getReadyAlerts
-    @State private var leave = ExecPreferences.leaveAlerts
     @State private var mapsApp = ExecPreferences.mapsApp
     @State private var searching: Which?
     @State private var query = ""
@@ -61,21 +59,12 @@ struct TravelSettingsView: View {
                     }
                 }
             }
-
-            Section {
-                Toggle("Prep", isOn: $prep)
-                Toggle("Get ready", isOn: $getReady)
-                Toggle("Leave", isOn: $leave)
-            } header: { Text("Alerts") } footer: {
-                Text("Your reminders for each event stay on whatever you choose here.")
-            }
         }
+        .listRowBackground(c.card)
+        .settingsStyle()
         .navigationTitle("Getting there")
         .onChange(of: mode) { _, v in ExecPreferences.defaultMode = v; changed() }
         .onChange(of: mapsApp) { _, v in ExecPreferences.mapsApp = v }
-        .onChange(of: prep) { _, v in ExecPreferences.prepAlerts = v; changed() }
-        .onChange(of: getReady) { _, v in ExecPreferences.getReadyAlerts = v; changed() }
-        .onChange(of: leave) { _, v in ExecPreferences.leaveAlerts = v; changed() }
         .onChange(of: hasHours) { _, _ in saveHours() }
         .onChange(of: hoursStart) { _, _ in saveHours() }
         .onChange(of: hoursEnd) { _, _ in saveHours() }
@@ -85,9 +74,9 @@ struct TravelSettingsView: View {
     private func placeRow(_ title: String, _ place: ResolvedPlace?, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Text(title).foregroundStyle(.primary)
+                Text(title).foregroundStyle(c.text)
                 Spacer()
-                Text(place?.name ?? "Set").foregroundStyle(.secondary).lineLimit(1)
+                Text(place?.name ?? "Set").foregroundStyle(place == nil ? c.goldText : c.muted).lineLimit(1)
             }
         }
     }

@@ -74,6 +74,7 @@ struct OlanaApp: App {
     init() {
         // Analytics and the Google Calendar client ID. No account: there's no login.
         FirebaseApp.configure()
+        OlanaAnalytics.applySharing()
     }
 
     @ViewBuilder

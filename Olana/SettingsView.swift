@@ -2,43 +2,154 @@
 //  SettingsView.swift
 //  Olana
 //
-//  Created by Chukwuebuka Ohiomoba on 9/23/25.
-//
-//  UPDATED: Notifications as navigation item leading to dedicated settings
+//  Settings, in home's palette: Notifications, Getting there and Calendars;
+//  Olana Plus; Appearance; Privacy; About. Notifications is one screen
+//  (NotificationsSettingsView), organized around what Olana sends, not
+//  urgency tiers: urgency decides which events get help, in the background.
 //
 
 import SwiftUI
 import UserNotifications
-import ActivityKit
 
 struct SettingsView: View {
-    @Environment(\.olanaTheme) private var theme
-    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.homePalette) private var c
     @ThemePreference private var themeVariant: ThemeVariant
-    @AppStorage("literaryFlavor") private var literaryFlavor: Bool = true
-    @State private var isViewVisible = false
-
-    // Notification state
-    @ObservedObject private var notificationEngine = NotificationEngine.shared
-
-    // Calendar integration
+    @ObservedObject private var engine = NotificationEngine.shared
+    @ObservedObject private var plus = PlusStore.shared
+    @ObservedObject private var googleOAuth = GoogleOAuthManager.shared
     @EnvironmentObject private var calendarManager: CalendarIntegrationManager
     @EnvironmentObject private var calendarDataStore: CalendarDataStore
+    @EnvironmentObject private var store: EventStore
+    @Environment(\.scenePhase) private var scenePhase
 
-    // Navigation
-    @State private var showingNotificationSettings = false
-    @ObservedObject private var plus = PlusStore.shared
     @State private var privacyAction: PrivacyAction?
     @State private var privacyDone: String?
-    @State private var showingTravel = false
-    @State private var showingCalendarSettings = false
-    @EnvironmentObject private var store: EventStore
+    @State private var shareUsage = OlanaAnalytics.sharing
 
-    private var plusSubtitle: String {
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    NavigationLink { NotificationsSettingsView() } label: {
+                        row("Notifications", "bell", value: notificationsValue)
+                    }
+                    NavigationLink { TravelSettingsView() } label: {
+                        row("Getting there", "figure.walk", value: SavedPlaces.home == nil ? "Set home" : nil)
+                    }
+                    NavigationLink {
+                        CalendarSettingsView()
+                            .environmentObject(calendarManager)
+                            .environmentObject(calendarDataStore)
+                    } label: {
+                        row("Calendars", "calendar", value: calendarsValue)
+                    }
+                }
+                .listRowBackground(c.card)
+
+                Section {
+                    Button { plus.showPaywall = true } label: {
+                        row("Olana Plus", "sparkle", value: plusValue)
+                    }
+                    .foregroundStyle(c.text)
+                }
+                .listRowBackground(c.card)
+
+                Section("Appearance") {
+                    Picker("Appearance", selection: $themeVariant) {
+                        ForEach(ThemeVariant.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                }
+                .listRowBackground(c.card)
+
+                Section {
+                    Toggle("Share anonymous usage", isOn: $shareUsage)
+                        .onChange(of: shareUsage) { _, on in OlanaAnalytics.setSharing(on) }
+                    ForEach(PrivacyAction.allCases, id: \.self) { action in
+                        Button(role: .destructive) { privacyAction = action } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(action.title)
+                                Text(action.subtitle).font(.caption).foregroundStyle(c.muted)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Privacy")
+                } footer: {
+                    Text("Usage is counts, like how often prep alerts are used. Never titles, notes, places or links. Everything Olana works out stays on this iPhone.")
+                }
+                .listRowBackground(c.card)
+
+                Section("About") {
+                    LabeledContent("Version", value: Self.version)
+                    #if DEBUG
+                    NavigationLink("Developer") { DeveloperSettingsView() }
+                    #endif
+                }
+                .listRowBackground(c.card)
+            }
+            .settingsStyle()
+            .navigationTitle("Settings")
+            .confirmationDialog(privacyAction?.title ?? "", isPresented: Binding(
+                get: { privacyAction != nil }, set: { if !$0 { privacyAction = nil } }),
+                titleVisibility: .visible) {
+                if let a = privacyAction {
+                    Button(a.confirm, role: .destructive) { perform(a) }
+                }
+            } message: {
+                Text(privacyAction?.warning ?? "")
+            }
+            .alert(privacyDone ?? "", isPresented: Binding(get: { privacyDone != nil },
+                                                         set: { if !$0 { privacyDone = nil } })) {
+                Button("OK", role: .cancel) {}
+            }
+            .task { await engine.checkAuthorizationStatus() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await engine.checkAuthorizationStatus() } }
+            }
+        }
+    }
+
+    private func row(_ title: String, _ icon: String, value: String?) -> some View {
+        LabeledContent {
+            if let value { Text(value).foregroundStyle(c.muted) }
+        } label: {
+            Label { Text(title).foregroundStyle(c.text) } icon: {
+                Image(systemName: icon).foregroundStyle(c.goldText)
+            }
+        }
+    }
+
+    // MARK: Values
+
+    private var notificationsValue: String {
+        switch engine.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return "On"
+        case .denied: return "Off"
+        default: return "Not set up"
+        }
+    }
+
+    private var calendarsValue: String {
+        var names: [String] = []
+        if calendarManager.isAuthorized { names.append("Apple") }
+        if !googleOAuth.connectedAccounts.isEmpty { names.append("Google") }
+        return names.isEmpty ? "Not connected" : names.joined(separator: ", ")
+    }
+
+    private var plusValue: String {
         if !plus.gate.canSellPlus { return "Needs Apple Intelligence" }
         if plus.state.purchased || plus.state.fakeDoorAt != nil { return "On" }
-        if plus.inPreview { return "Preview · \(plus.momentsLeft) of \(PlusRules.previewMoments) left" }
-        return "Leave-by, prep and bring list"
+        if plus.inPreview { return "Preview · \(plus.momentsLeft) left" }
+        return "See what's included"
+    }
+
+    private static var version: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
     }
 
     private func perform(_ a: PrivacyAction) {
@@ -48,1035 +159,245 @@ struct SettingsView: View {
         case .caches: AssistCache.shared.clear(); EventProgressStore.shared.clear(); privacyDone = "Caches cleared"
         }
     }
-    
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                LinearGradient(
-                    colors: [theme.colors.canvasStart, theme.colors.canvasEnd],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // MARK: - General Settings
-                        SettingsSection(title: "General Settings") {
-                            // Notifications Navigation
-                            SettingsNavigationRow(
-                                icon: "bell.fill",
-                                iconColor: theme.colors.ribbon,
-                                title: "Notifications",
-                                subtitle: notificationEngine.isAuthorized ? "Enabled" : "Tap to enable",
-                                action: { showingNotificationSettings = true }
-                            )
-                        }
-                        
-                        // MARK: - Appearance
-                        SettingsSection(title: "Appearance") {
-                            ThemePickerView(selectedTheme: $themeVariant)
-                            
-                            SettingsNavigationRow(
-                                icon: "globe",
-                                iconColor: theme.colors.ribbon,
-                                title: "Language",
-                                action: {}
-                            )
-                        }
-                        
-                        // MARK: - Calendar Integrations
-                        SettingsSection(title: "Calendar Integrations") {
-                            SettingsNavigationRow(
-                                icon: "calendar",
-                                iconColor: .red,
-                                title: "Calendar",
-                                subtitle: calendarManager.isAuthorized ? "Apple Calendar connected" : "Connect your calendar",
-                                action: { showingCalendarSettings = true }
-                            )
-                        }
-                        
-                        // MARK: - Getting there (spec v3 §7.5, §7.7)
-                        SettingsSection(title: "Getting there") {
-                            SettingsNavigationRow(
-                                icon: "figure.walk",
-                                iconColor: theme.colors.ribbon,
-                                title: "Getting there",
-                                subtitle: SavedPlaces.home == nil ? "Set home for leave-by times" : "Home, work and alerts",
-                                action: { showingTravel = true }
-                            )
-                        }
-                        .sheet(isPresented: $showingTravel) { NavigationStack { TravelSettingsView() } }
-
-                        // MARK: - Olana Plus (PRD v6 §1.10)
-                        SettingsSection(title: "Olana Plus") {
-                            SettingsNavigationRow(
-                                icon: "sparkle",
-                                iconColor: theme.colors.ribbon,
-                                title: "Olana Plus",
-                                subtitle: plusSubtitle,
-                                action: { plus.showPaywall = true }
-                            )
-                        }
-
-                        // MARK: - Privacy (PRD v3 §3.16)
-                        SettingsSection(title: "Privacy") {
-                            ForEach(PrivacyAction.allCases, id: \.self) { action in
-                                SettingsNavigationRow(
-                                    icon: action.icon,
-                                    iconColor: .gray,
-                                    title: action.title,
-                                    subtitle: action.subtitle,
-                                    action: { privacyAction = action }
-                                )
-                            }
-                        }
-                        .confirmationDialog(privacyAction?.title ?? "", isPresented: Binding(
-                            get: { privacyAction != nil }, set: { if !$0 { privacyAction = nil } }),
-                            titleVisibility: .visible) {
-                            if let a = privacyAction {
-                                Button(a.confirm, role: .destructive) { perform(a) }
-                            }
-                        } message: {
-                            Text(privacyAction?.warning ?? "")
-                        }
-                        .alert(privacyDone ?? "", isPresented: Binding(get: { privacyDone != nil },
-                                                                     set: { if !$0 { privacyDone = nil } })) {
-                            Button("OK", role: .cancel) {}
-                        }
-
-                        // MARK: - About Olana
-                        SettingsSection(title: "About Olana") {
-                            SettingsNavigationRow(
-                                icon: "doc.text.fill",
-                                iconColor: theme.colors.ribbon,
-                                title: "Terms of Service",
-                                action: {}
-                            )
-                            
-                            SettingsNavigationRow(
-                                icon: "hand.raised.fill",
-                                iconColor: theme.colors.ribbon,
-                                title: "Privacy Policy",
-                                action: {}
-                            )
-                        }
-                        
-                        #if DEBUG
-                        SettingsSection(title: "Developer") {
-                            Menu {
-                                Button("Plus: real (preview, fake door)") { PlusAccess.setDebug(nil) }
-                                Button("Plus: force on") { PlusAccess.setDebug(true) }
-                                Button("Plus: force off") { PlusAccess.setDebug(false) }
-                                Button("Reset the Plus preview", role: .destructive) { plus.resetForTesting() }
-                            } label: {
-                                Label("Plus testing", systemImage: "sparkle")
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 14)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            NavigationLink {
-                                SpikesView()
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "testtube.2")
-                                        .font(.title3)
-                                        .foregroundStyle(.purple)
-                                        .frame(width: 36, height: 36)
-                                        .background(Circle().fill(Color.purple.opacity(0.12)))
-
-                                    Text("M0 spikes")
-                                        .font(.body)
-                                        .foregroundStyle(theme.colors.ink)
-
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider().padding(.leading, 66)
-
-                            Button {
-                                UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "arrow.counterclockwise")
-                                        .font(.title3)
-                                        .foregroundStyle(.orange)
-                                        .frame(width: 36, height: 36)
-                                        .background(Circle().fill(Color.orange.opacity(0.12)))
-
-                                    Text("Reset Onboarding")
-                                        .font(.body)
-                                        .foregroundStyle(theme.colors.ink)
-
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider().padding(.leading, 66)
-
-                            // MARK: Critical (high) — timeSensitive + ringtone sound
-                            Button {
-                                let content = UNMutableNotificationContent()
-                                content.title              = "Test Event (Critical)"
-                                content.subtitle           = "in 5 seconds"
-                                content.body               = "Starts at \(Date(timeIntervalSinceNow: 5).formatted(date: .omitted, time: .shortened)). Don't miss this one."
-                                content.sound              = .default
-                                content.categoryIdentifier = "EVENT_HIGH"
-                                content.interruptionLevel  = .timeSensitive
-                                content.userInfo           = ["eventId": UUID().uuidString, "urgency": 2, "notificationIndex": 0]
-                                let request = UNNotificationRequest(
-                                    identifier: "debug-critical-\(UUID().uuidString)",
-                                    content: content,
-                                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
-                                )
-                                UNUserNotificationCenter.current().add(request) { error in
-                                    if let error { print("❌ Debug notification failed: \(error)") }
-                                    else { print("✅ Critical test scheduled — fires in 5s") }
-                                }
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "bell.badge.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(.red)
-                                        .frame(width: 36, height: 36)
-                                        .background(Circle().fill(Color.red.opacity(0.12)))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Test Critical Notification")
-                                            .font(.body)
-                                            .foregroundStyle(theme.colors.ink)
-                                        Text("Breaks Focus mode · timeSensitive · fires in 5s")
-                                            .font(.caption)
-                                            .foregroundStyle(theme.colors.slate)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider().padding(.leading, 66)
-
-                            // MARK: Soon (medium) — active + default sound
-                            Button {
-                                let content = UNMutableNotificationContent()
-                                content.title              = "Test Event (Soon)"
-                                content.subtitle           = "in 5 seconds"
-                                content.body               = "Starts at \(Date(timeIntervalSinceNow: 5).formatted(date: .omitted, time: .shortened)). Worth a heads up."
-                                content.sound              = .default
-                                content.categoryIdentifier = "EVENT_MEDIUM"
-                                content.interruptionLevel  = .active
-                                content.userInfo           = ["eventId": UUID().uuidString, "urgency": 1, "notificationIndex": 0]
-                                let request = UNNotificationRequest(
-                                    identifier: "debug-soon-\(UUID().uuidString)",
-                                    content: content,
-                                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
-                                )
-                                UNUserNotificationCenter.current().add(request) { error in
-                                    if let error { print("❌ Debug notification failed: \(error)") }
-                                    else { print("✅ Soon test scheduled — fires in 5s") }
-                                }
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "bell.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(.orange)
-                                        .frame(width: 36, height: 36)
-                                        .background(Circle().fill(Color.orange.opacity(0.12)))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Test Soon Notification")
-                                            .font(.body)
-                                            .foregroundStyle(theme.colors.ink)
-                                        Text("Default sound · respects Focus · fires in 5s")
-                                            .font(.caption)
-                                            .foregroundStyle(theme.colors.slate)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider().padding(.leading, 66)
-
-                            // MARK: Later (low) — passive, no sound, lands silently in Notification Center
-                            Button {
-                                let content = UNMutableNotificationContent()
-                                content.title              = "Test Event (Later)"
-                                content.subtitle           = "in 5 seconds"
-                                content.body               = "Starts at \(Date(timeIntervalSinceNow: 5).formatted(date: .omitted, time: .shortened)). It's on your list."
-                                content.sound              = nil
-                                content.categoryIdentifier = "EVENT_LOW"
-                                content.interruptionLevel  = .passive
-                                content.userInfo           = ["eventId": UUID().uuidString, "urgency": 0, "notificationIndex": 0]
-                                let request = UNNotificationRequest(
-                                    identifier: "debug-later-\(UUID().uuidString)",
-                                    content: content,
-                                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
-                                )
-                                UNUserNotificationCenter.current().add(request) { error in
-                                    if let error { print("❌ Debug notification failed: \(error)") }
-                                    else { print("✅ Later test scheduled — fires in 5s (check Notification Center, no banner)") }
-                                }
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "bell.slash.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(.gray)
-                                        .frame(width: 36, height: 36)
-                                        .background(Circle().fill(Color.gray.opacity(0.12)))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Test Later Notification")
-                                            .font(.body)
-                                            .foregroundStyle(theme.colors.ink)
-                                        Text("No sound · silent banner · fires in 5s")
-                                            .font(.caption)
-                                            .foregroundStyle(theme.colors.slate)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider().padding(.leading, 66)
-
-                            // MARK: Live Activity test — starts a mock Critical event 5 min from now
-                            Button {
-                                Task { await NotificationEngine.shared.debugStartTestLiveActivity() }
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "livephoto")
-                                        .font(.title3)
-                                        .foregroundStyle(.cyan)
-                                        .frame(width: 36, height: 36)
-                                        .background(Circle().fill(Color.cyan.opacity(0.12)))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Test Live Activity")
-                                            .font(.body)
-                                            .foregroundStyle(theme.colors.ink)
-                                        Text("Critical · starts in 5 min · check Lock Screen & Dynamic Island")
-                                            .font(.caption)
-                                            .foregroundStyle(theme.colors.slate)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider().padding(.leading, 66)
-
-                            // MARK: End-to-end pipeline test — schedules a real event 2 min out
-                            // This triggers: notification fallback (5s) + Live Activity + AlarmKit alarm
-                            Button {
-                                let mockEvent = OlanaEvent(
-                                    title: "⚡ End-to-End Test",
-                                    start: Date().addingTimeInterval(2 * 60),
-                                    end:   Date().addingTimeInterval(5 * 60),
-                                    urgency: .high
-                                )
-                                Task {
-                                    await NotificationEngine.shared.scheduleNotifications(for: mockEvent)
-                                    print("✅ End-to-end test: notification in ~5s · Live Activity now · Alarm in 2min")
-                                }
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "bolt.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(.purple)
-                                        .frame(width: 36, height: 36)
-                                        .background(Circle().fill(Color.purple.opacity(0.12)))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Test Full Pipeline")
-                                            .font(.body)
-                                            .foregroundStyle(theme.colors.ink)
-                                        Text("Notification now · Live Activity · Alarm in 2 min")
-                                            .font(.caption)
-                                            .foregroundStyle(theme.colors.slate)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider().padding(.leading, 66)
-
-                            // MARK: AlarmKit test — fires a real alarm 30 seconds from now
-                            Button {
-                                Task {
-                                    let granted = await AlarmKitManager.shared.requestAuthorization()
-                                    guard granted else {
-                                        print("⚠️ AlarmKit: permission not granted")
-                                        return
-                                    }
-                                    let mockEvent = OlanaEvent(
-                                        title: "Test AlarmKit Alarm",
-                                        start: Date().addingTimeInterval(30),
-                                        end:   Date().addingTimeInterval(90),
-                                        urgency: .high
-                                    )
-                                    await AlarmKitManager.shared.scheduleAlarm(for: mockEvent)
-                                    print("✅ AlarmKit test alarm set — fires in 30 seconds")
-                                }
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "alarm.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(.red)
-                                        .frame(width: 36, height: 36)
-                                        .background(Circle().fill(Color.red.opacity(0.12)))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Test AlarmKit Alarm")
-                                            .font(.body)
-                                            .foregroundStyle(theme.colors.ink)
-                                        Text("Fires in 30 seconds · requires real device + iOS 26")
-                                            .font(.caption)
-                                            .foregroundStyle(theme.colors.slate)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.top, 8)
-                        #endif
-
-                        Spacer()
-                            .frame(height: 40)
-                    }
-                }
-            }
-            .navigationTitle("My Account")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(isPresented: $showingNotificationSettings) {
-                NotificationHubView()
-            }
-            .navigationDestination(isPresented: $showingCalendarSettings) {
-                CalendarSettingsView()
-                    .environmentObject(calendarManager)
-                    .environmentObject(calendarDataStore)
-            }
-            .onAppear {
-                isViewVisible = true
-                Task {
-                    await notificationEngine.checkAuthorizationStatus()
-                }
-            }
-            .onDisappear {
-                isViewVisible = false
-            }
-            .onChange(of: scenePhase) { _, newPhase in
-                switch newPhase {
-                case .active:
-                    Task {
-                        await notificationEngine.checkAuthorizationStatus()
-                    }
-                case .background, .inactive:
-                    break
-                @unknown default:
-                    break
-                }
-            }
-        }
-    }
 }
 
-// MARK: - Notification Settings View
-struct NotificationSettingsView: View {
-    @Environment(\.olanaTheme) private var theme
+// MARK: - Notifications (one screen)
+
+/// Everything Olana sends, on one screen, organized by what it does: the
+/// reminder every event gets (free), help getting it done (Plus, Join free),
+/// alarms, quiet hours. An example event at the top shows what each switch
+/// changes. Urgency isn't a setting: it decides which events get help.
+struct NotificationsSettingsView: View {
+    @Environment(\.homePalette) private var c
+    @Environment(\.openURL) private var openURL
     @ObservedObject private var settings = NotificationSettings.shared
     @ObservedObject private var engine = NotificationEngine.shared
-    
-    @State private var showingQuietHoursPicker = false
-    
+    @ObservedObject private var plus = PlusStore.shared
+    @ObservedObject private var alarmKit = AlarmKitManager.shared
+
+    @State private var prep = ExecPreferences.prepAlerts
+    @State private var getReady = ExecPreferences.getReadyAlerts
+    @State private var leave = ExecPreferences.leaveAlerts
+    @State private var join = ExecPreferences.joinAlerts
+
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [theme.colors.canvasStart, theme.colors.canvasEnd],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            
-            ScrollView {
-                VStack(spacing: 24) {
-                    // MARK: - Enable/Status Card
-                    if engine.isAuthorized {
-                        StatusCard(status: "Notifications Enabled", color: .green)
-                            .padding(.horizontal)
-                            .padding(.top, 8)
-                    } else {
-                        EnableCard {
-                            Task {
-                                _ = await engine.requestAuthorization()
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                    }
-                    
-                    if engine.isAuthorized {
-                        // MARK: - Quiet Hours
-                        SettingCard(
-                            icon: "moon.fill",
-                            iconColor: .indigo,
-                            title: "Quiet Hours",
-                            description: "Silence notifications during sleep"
-                        ) {
-                            VStack(spacing: 16) {
-                                Toggle("Enable Quiet Hours", isOn: $settings.quietHoursEnabled)
-                                    .tint(theme.colors.ribbon)
-                                
-                                if settings.quietHoursEnabled {
-                                    Divider()
-                                    
-                                    Button(action: { showingQuietHoursPicker = true }) {
-                                        HStack {
-                                            Text("Schedule")
-                                                .foregroundStyle(.secondary)
-                                            
-                                            Spacer()
-                                            
-                                            Text(quietHoursTimeString)
-                                                .foregroundStyle(theme.colors.ribbon)
-                                            
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                        .padding(.horizontal)
-                        
-                        // MARK: - Urgency Settings
-                        VStack(spacing: 16) {
-                            UrgencyCard(
-                                urgency: .low,
-                                label: "Later",
-                                color: theme.colors.urgencyLow,
-                                snoozeMinutes: $settings.lowUrgencySnoozeMinutes
-                            )
-                            
-                            UrgencyCard(
-                                urgency: .medium,
-                                label: "Soon",
-                                color: theme.colors.urgencyMedium,
-                                snoozeMinutes: $settings.mediumUrgencySnoozeMinutes
-                            )
-                            
-                            UrgencyCard(
-                                urgency: .high,
-                                label: "Critical",
-                                color: theme.colors.urgencyHigh,
-                                snoozeMinutes: $settings.highUrgencySnoozeMinutes
-                            )
-                        }
-                        .padding(.horizontal)
-                        
-                        // MARK: - Daily Limit
-                        SettingCard(
-                            icon: "bell.badge.fill",
-                            iconColor: theme.colors.ribbon,
-                            title: "Daily Limit",
-                            description: "Maximum notifications per day"
-                        ) {
-                            DailyLimitPicker(dailyCap: $settings.dailyNotificationCap)
-                        }
-                        .padding(.horizontal)
-                        
-                        // MARK: - Audio Reminders
-                        SettingCard(
-                            icon: "speaker.wave.2.fill",
-                            iconColor: .orange,
-                            title: "Audio Reminders",
-                            description: "Play a sound when notifications arrive"
-                        ) {
-                            Toggle("Enable sounds", isOn: $settings.enableAudioReminders)
-                                .tint(theme.colors.ribbon)
-                        }
-                        .padding(.horizontal)
+        Form {
+            permissionSection
 
-                        // MARK: - Alarm Alerts (AlarmKit, iOS 26+)
-                        if #available(iOS 26.0, *) {
-                            AlarmKitSettingCard()
-                                .padding(.horizontal)
-                        }
-
-                        // MARK: - Advanced
-                        SettingCard(
-                            icon: "gearshape.fill",
-                            iconColor: .gray,
-                            title: "Advanced",
-                            description: "Additional options"
-                        ) {
-                            VStack(spacing: 12) {
-                                Toggle("Time-Sensitive (Critical only)", isOn: $settings.allowTimeSensitiveHigh)
-                                    .tint(theme.colors.ribbon)
-
-                                Divider()
-
-                                Toggle("Calendar Backup Alarms", isOn: $settings.enableCalendarRedundancy)
-                                    .tint(theme.colors.ribbon)
-                            }
-                        }
-                        .padding(.horizontal)
-
-                        // MARK: - Live Activity
-                        SettingCard(
-                            icon: "livephoto",
-                            iconColor: .cyan,
-                            title: "Live Activity",
-                            description: "Dynamic Island & Lock Screen countdown"
-                        ) {
-                            VStack(spacing: 14) {
-                                HStack {
-                                    Text("Show countdown")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Text("\(settings.liveActivityLeadMinutes) min before")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(theme.colors.ribbon)
-                                }
-
-                                Divider()
-
-                                HStack(spacing: 8) {
-                                    ForEach([5, 10, 15, 20, 30], id: \.self) { minutes in
-                                        Button {
-                                            withAnimation(.spring(response: 0.3)) {
-                                                settings.liveActivityLeadMinutes = minutes
-                                            }
-                                        } label: {
-                                            Text("\(minutes)m")
-                                                .font(.subheadline.weight(settings.liveActivityLeadMinutes == minutes ? .bold : .regular))
-                                                .foregroundStyle(settings.liveActivityLeadMinutes == minutes ? .white : theme.colors.ink)
-                                                .frame(maxWidth: .infinity)
-                                                .padding(.vertical, 10)
-                                                .background(
-                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                        .fill(settings.liveActivityLeadMinutes == minutes ? theme.colors.ribbon : theme.colors.slate.opacity(0.1))
-                                                )
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                        .stroke(
-                                                            settings.liveActivityLeadMinutes == minutes ? theme.colors.ribbon : theme.colors.slate.opacity(0.2),
-                                                            lineWidth: settings.liveActivityLeadMinutes == minutes ? 2 : 1
-                                                        )
-                                                )
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                    
-                    Spacer()
-                        .frame(height: 40)
-                }
+            Section {
+                NotificationExample(lead: settings.reminderLeadMinutes, prep: prep, getReady: getReady, leave: leave)
+            } header: {
+                Text("What Olana sends")
+            } footer: {
+                Text("An example: an important meeting across town at 3:00. It changes as you change the settings below.")
             }
+            .listRowBackground(c.card)
+
+            Section {
+                Picker("Remind me before events", selection: $settings.reminderLeadMinutes) {
+                    ForEach(ReminderSchedule.leadOptions, id: \.self) { Text("\($0) min").tag($0) }
+                }
+            } header: {
+                Text("Reminders")
+            } footer: {
+                Text("Every event gets one. Important events also get one the evening before and an hour before.")
+            }
+            .listRowBackground(c.card)
+
+            Section {
+                helpToggle("Prep", "Start prepping for Client review", $prep) { ExecPreferences.prepAlerts = $0 }
+                helpToggle("Get ready", "Get ready · leave at 2:31", $getReady) { ExecPreferences.getReadyAlerts = $0 }
+                helpToggle("Leave", "Leave now · 14 min walk", $leave) { ExecPreferences.leaveAlerts = $0 }
+                helpToggle("Join", "Client sync starts in 1 min", $join) { ExecPreferences.joinAlerts = $0 }
+            } header: {
+                HStack {
+                    Text("Help getting it done")
+                    Spacer()
+                    if !plus.hasPlus { Text("Plus").foregroundStyle(c.goldText) }
+                }
+            } footer: {
+                Text(plus.hasPlus
+                     ? "Only for events that matter, timed from your prep and travel."
+                     : "Only for events that matter. Join is free; Prep, Get ready and Leave are part of Olana Plus.")
+            }
+            .listRowBackground(c.card)
+
+            Section {
+                Toggle("Ring for what can't be missed", isOn: alarms)
+                if settings.urgentAlarmsEnabled, alarmKit.authorizationState == .denied {
+                    Button("Alarms are off in iOS Settings") { openSettings() }
+                }
+            } header: {
+                Text("Alarms")
+            } footer: {
+                Text("A full-screen alarm, even on silent, when it's time to start. Only for events with serious consequences.")
+            }
+            .listRowBackground(c.card)
+
+            Section {
+                Toggle("Quiet hours", isOn: $settings.quietHoursEnabled)
+                if settings.quietHoursEnabled {
+                    DatePicker("From", selection: $settings.quietHoursStart, displayedComponents: .hourAndMinute)
+                    DatePicker("Until", selection: $settings.quietHoursEnd, displayedComponents: .hourAndMinute)
+                }
+            } header: {
+                Text("Quiet hours")
+            } footer: {
+                Text("Reminders and prep alerts wait until quiet hours end. Leave and join alerts for important events, and alarms, still come through.")
+            }
+            .listRowBackground(c.card)
+
+            Section {
+                Toggle("Break through Focus for important events", isOn: $settings.allowTimeSensitiveHigh)
+                Toggle("Countdown on the Lock Screen", isOn: $settings.countdownTimerEnabled)
+                if settings.countdownTimerEnabled {
+                    Picker("Starts", selection: $settings.liveActivityLeadMinutes) {
+                        ForEach([5, 10, 15, 30], id: \.self) { Text("\($0) min before").tag($0) }
+                    }
+                }
+                Toggle("Sound", isOn: $settings.enableAudioReminders)
+            } header: {
+                Text("More")
+            } footer: {
+                Text("The countdown is for important events.")
+            }
+            .listRowBackground(c.card)
         }
+        .settingsStyle()
         .navigationTitle("Notifications")
-        .navigationBarTitleDisplayMode(.large)
-        .sheet(isPresented: $showingQuietHoursPicker) {
-            QuietHoursPickerSheet(
-                quietHoursStart: $settings.quietHoursStart,
-                quietHoursEnd: $settings.quietHoursEnd
-            )
-            .presentationDetents([.medium])
-        }
+        .onChange(of: settings.reminderLeadMinutes) { replan() }
+        .onChange(of: settings.quietHoursEnabled) { replan() }
+        .onChange(of: settings.quietHoursStart) { replan() }
+        .onChange(of: settings.quietHoursEnd) { replan() }
+        .onChange(of: settings.allowTimeSensitiveHigh) { replan() }
+        .onChange(of: settings.enableAudioReminders) { replan() }
+        .task { await engine.checkAuthorizationStatus(); alarmKit.refreshState() }
     }
-    
-    private var quietHoursTimeString: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        let start = formatter.string(from: settings.quietHoursStart)
-        let end = formatter.string(from: settings.quietHoursEnd)
-        return "\(start) - \(end)"
-    }
-}
 
-// MARK: - Status Card
-private struct StatusCard: View {
-    @Environment(\.olanaTheme) private var theme
-    let status: String
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.title)
-                .foregroundStyle(color)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(status)
-                    .font(.headline)
-                    .foregroundStyle(theme.colors.ink)
-                
-                Text("You'll receive smart reminders")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+    @ViewBuilder private var permissionSection: some View {
+        switch engine.authorizationStatus {
+        case .denied:
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Notifications are off for Olana").font(.headline).foregroundStyle(c.text)
+                    Text("Olana can't remind you until they're on in iOS Settings.")
+                        .font(.subheadline).foregroundStyle(c.muted)
+                }
+                Button("Open Settings") { openSettings() }
             }
-            
-            Spacer()
+            .listRowBackground(c.card)
+        case .notDetermined:
+            Section {
+                Button("Turn on notifications") {
+                    Task {
+                        if await engine.requestAuthorization() { engine.requestReplan("notifications allowed") }
+                    }
+                }
+            }
+            .listRowBackground(c.card)
+        default:
+            EmptyView()
         }
-        .padding(20)
-        .glassEffect(.regular.tint(theme.colors.paper.opacity(0.6)), in: .rect(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(color.opacity(0.3), lineWidth: 1)
-        )
-        .shadow(color: theme.colors.pillShadow.opacity(0.15), radius: 16, x: 0, y: 8)
+    }
+
+    private func helpToggle(_ title: String, _ example: String, _ isOn: Binding<Bool>,
+                            save: @escaping (Bool) -> Void) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundStyle(c.text)
+                Text("“\(example)”").font(.caption).foregroundStyle(c.muted)
+            }
+        }
+        .onChange(of: isOn.wrappedValue) { _, v in
+            save(v)
+            replan()
+        }
+    }
+
+    /// The permission is asked the first time it's turned on.
+    private var alarms: Binding<Bool> {
+        Binding(get: { settings.urgentAlarmsEnabled }, set: { on in
+            settings.urgentAlarmsEnabled = on
+            if on, alarmKit.authorizationState == .notDetermined {
+                Task { await alarmKit.requestAuthorization(); replan() }
+            } else {
+                replan()
+            }
+        })
+    }
+
+    private func replan() { NotificationEngine.shared.requestReplan("notification settings") }
+
+    private func openSettings() {
+        if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
     }
 }
 
-// MARK: - Enable Card
-private struct EnableCard: View {
-    @Environment(\.olanaTheme) private var theme
-    let action: () -> Void
-    
+// MARK: - The example
+
+/// "What Olana sends" for one important in-person meeting at 3:00 with an
+/// hour of prep and a 14 min walk. Reminder times come from ReminderSchedule,
+/// the same code the planner uses; lines for switched-off alerts fade.
+private struct NotificationExample: View {
+    let lead: Int
+    let prep: Bool, getReady: Bool, leave: Bool
+    @Environment(\.homePalette) private var c
+
+    private struct Line: Identifiable {
+        let id = UUID()
+        let minutesFrom3: Int
+        let time: String
+        let text: String
+        let on: Bool
+    }
+
+    private var lines: [Line] {
+        let cal = Calendar.current
+        let three = cal.date(bySettingHour: 15, minute: 0, second: 0, of: Date())!
+        func at(_ minutesBefore: Int) -> String { ExecFormat.clock(three.addingTimeInterval(-Double(minutesBefore) * 60), cal) }
+        var out = [
+            Line(minutesFrom3: -90, time: at(90), text: "Start prepping for Client review", on: prep),
+            Line(minutesFrom3: -39, time: at(39), text: "Get ready · leave at 2:31", on: getReady),
+            Line(minutesFrom3: -29, time: at(29), text: "Leave now · 14 min walk", on: leave),
+        ]
+        for m in ReminderSchedule.moments(important: true, lead: lead) {
+            switch m {
+            case .before(let mins):
+                out.append(Line(minutesFrom3: -mins, time: at(mins), text: "Client review at 3:00", on: true))
+            case .clock(let h, _, _):
+                out.append(Line(minutesFrom3: -(24 * 60), time: "\(h > 12 ? h - 12 : h):00 PM",
+                                text: "Tomorrow at 3:00: Client review", on: true))
+            }
+        }
+        return out.sorted { $0.minutesFrom3 < $1.minutesFrom3 }
+    }
+
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 16) {
-                Image(systemName: "bell.badge.fill")
-                    .font(.title)
-                    .foregroundStyle(theme.colors.ribbon)
-                    .frame(width: 60, height: 60)
-                    .background(
-                        Circle()
-                            .fill(theme.colors.ribbon.opacity(0.15))
-                    )
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Enable Notifications")
-                        .font(.headline)
-                        .foregroundStyle(theme.colors.ink)
-                    
-                    Text("Tap to get started")
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(lines) { line in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(line.time)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(c.muted)
+                        .frame(width: 92, alignment: .leading)
+                    Text(line.text)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(c.text)
+                        .strikethrough(!line.on, color: c.muted)
                 }
-                
-                Spacer()
-                
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(theme.colors.ribbon)
+                .opacity(line.on ? 1 : 0.4)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(line.time): \(line.text)\(line.on ? "" : ", off")")
             }
-            .padding(20)
-            .glassEffect(.regular.tint(theme.colors.paper.opacity(0.6)), in: .rect(cornerRadius: 20))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(theme.colors.ribbon.opacity(0.3), lineWidth: 2)
-            )
-            .shadow(color: theme.colors.ribbon.opacity(0.2), radius: 20, x: 0, y: 10)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 4)
+        .animation(.easeInOut(duration: 0.2), value: [prep, getReady, leave])
     }
 }
 
-// MARK: - Setting Card
-private struct SettingCard<Content: View>: View {
-    @Environment(\.olanaTheme) private var theme
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let description: String
-    let content: Content
-    
-    init(
-        icon: String,
-        iconColor: Color,
-        title: String,
-        description: String,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.icon = icon
-        self.iconColor = iconColor
-        self.title = title
-        self.description = description
-        self.content = content()
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundStyle(iconColor)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        Circle()
-                            .fill(iconColor.opacity(0.15))
-                    )
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(theme.colors.ink)
-                    
-                    Text(description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-            }
-            
-            Divider()
-                .background(theme.colors.slate.opacity(0.2))
-            
-            // Content
-            content
-        }
-        .padding(20)
-        .glassEffect(.regular.tint(theme.colors.paper.opacity(0.6)), in: .rect(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(theme.colors.cardBorder, lineWidth: 0.5)
-        )
-        .shadow(color: theme.colors.pillShadow, radius: 16, x: 0, y: 8)
-    }
-}
+// MARK: - Shared
 
-// MARK: - Urgency Card
-private struct UrgencyCard: View {
-    @Environment(\.olanaTheme) private var theme
-    let urgency: EventUrgency
-    let label: String
-    let color: Color
-    @Binding var snoozeMinutes: Int
-    
-    private var notificationCount: String {
-        switch urgency {
-        case .low: return "2"
-        case .medium: return "3"
-        case .high: return "4"
-        }
-    }
-
-    private var timing: String {
-        switch urgency {
-        case .low: return "8 am + 30 min before"
-        case .medium: return "6 pm day before + 1h + 15m"
-        case .high: return "6 pm day before + 1h + 30m + 10m"
-        }
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 16, height: 16)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label)
-                        .font(.headline)
-                        .foregroundStyle(theme.colors.ink)
-                    
-                    Text(timing)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                Text("\(notificationCount) max")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(color.opacity(0.15))
-                    )
-            }
-            
-            Divider()
-                .background(theme.colors.slate.opacity(0.2))
-            
-            // Snooze Picker
-            HStack {
-                Text("Snooze Duration")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                
-                Spacer()
-                
-                HStack(spacing: 12) {
-                    Button(action: {
-                        if snoozeMinutes > 5 {
-                            withAnimation(.spring(response: 0.3)) {
-                                snoozeMinutes = max(5, snoozeMinutes - 5)
-                            }
-                        }
-                    }) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(snoozeMinutes > 5 ? color : .gray.opacity(0.3))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Text("\(snoozeMinutes) min")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(color)
-                        .frame(minWidth: 60)
-                    
-                    Button(action: {
-                        if snoozeMinutes < 60 {
-                            withAnimation(.spring(response: 0.3)) {
-                                snoozeMinutes = min(60, snoozeMinutes + 5)
-                            }
-                        }
-                    }) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(snoozeMinutes < 60 ? color : .gray.opacity(0.3))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(20)
-        .glassEffect(.regular.tint(theme.colors.paper.opacity(0.6)), in: .rect(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(color.opacity(0.3), lineWidth: 1)
-        )
-        .shadow(color: color.opacity(0.1), radius: 12, x: 0, y: 6)
-    }
-}
-
-// MARK: - Daily Limit Picker
-private struct DailyLimitPicker: View {
-    @Environment(\.olanaTheme) private var theme
-    @Binding var dailyCap: Int
-    
-    private let options = [3, 6, 9, 12, 20]
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(options, id: \.self) { option in
-                Button(action: {
-                    withAnimation(.spring(response: 0.3)) {
-                        dailyCap = option
-                    }
-                }) {
-                    VStack(spacing: 4) {
-                        Text("\(option)")
-                            .font(.body.weight(dailyCap == option ? .bold : .regular))
-                        
-                        if option == 20 {
-                            Text("Max")
-                                .font(.caption2)
-                        }
-                    }
-                    .foregroundStyle(dailyCap == option ? .white : theme.colors.ink)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(dailyCap == option ? theme.colors.ribbon : theme.colors.slate.opacity(0.1))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(
-                                dailyCap == option ? theme.colors.ribbon : theme.colors.slate.opacity(0.2),
-                                lineWidth: dailyCap == option ? 2 : 1
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-}
-
-// MARK: - Quiet Hours Picker Sheet
-private struct QuietHoursPickerSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.olanaTheme) private var theme
-    @Binding var quietHoursStart: Date
-    @Binding var quietHoursEnd: Date
-    
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                theme.colors.canvasStart.ignoresSafeArea()
-                
-                VStack(spacing: 24) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Start")
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                            
-                            DatePicker("", selection: $quietHoursStart, displayedComponents: .hourAndMinute)
-                                .labelsHidden()
-                                .datePickerStyle(.compact)
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing, spacing: 8) {
-                            Text("End")
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                            
-                            DatePicker("", selection: $quietHoursEnd, displayedComponents: .hourAndMinute)
-                                .labelsHidden()
-                                .datePickerStyle(.compact)
-                        }
-                    }
-                    .padding(20)
-                    .glassEffect(.regular.tint(theme.colors.paper.opacity(0.6)), in: .rect(cornerRadius: 16))
-                    
-                    Spacer()
-                }
-                .padding(24)
-            }
-            .navigationTitle("Quiet Hours")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .foregroundStyle(theme.colors.ribbon)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Profile Card
-
-// MARK: - Settings Section (Unchanged)
-/// Settings › Privacy (PRD v3 §3.16). Telemetry withdrawal arrives with beta telemetry.
+/// Settings › Privacy (PRD v3 §3.16).
 enum PrivacyAction: CaseIterable {
     case places, overrides, caches
 
@@ -1094,13 +415,6 @@ enum PrivacyAction: CaseIterable {
         case .caches: return "Olana's on-device suggestions and prep progress"
         }
     }
-    var icon: String {
-        switch self {
-        case .places: return "mappin.slash"
-        case .overrides: return "slider.horizontal.3"
-        case .caches: return "trash"
-        }
-    }
     var confirm: String { self == .caches ? "Clear" : "Delete" }
     var warning: String {
         switch self {
@@ -1111,190 +425,17 @@ enum PrivacyAction: CaseIterable {
     }
 }
 
-private struct SettingsSection<Content: View>: View {
-    @Environment(\.olanaTheme) private var theme
-    let title: String
-    let content: Content
-    
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(theme.colors.ink)
-                .padding(.horizontal)
-            
-            VStack(spacing: 0) {
-                content
-            }
-            .glassEffect(.regular.tint(theme.colors.paper.opacity(0.6)), in: .rect(cornerRadius: 20))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(theme.colors.cardBorder, lineWidth: 0.5)
-            )
-            .shadow(color: theme.colors.pillShadow, radius: 16, x: 0, y: 8)
-            .padding(.horizontal)
-        }
-    }
+extension View {
+    /// Settings screens in home's palette: grouped rows on the page color.
+    func settingsStyle() -> some View { modifier(SettingsStyle()) }
 }
 
-// MARK: - Settings Navigation Row (Updated with subtitle)
-private struct SettingsNavigationRow: View {
-    @Environment(\.olanaTheme) private var theme
-    let icon: String
-    let iconColor: Color
-    let title: String
-    var subtitle: String? = nil
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundStyle(iconColor)
-                    .frame(width: 36, height: 36)
-                    .background(
-                        Circle()
-                            .fill(iconColor.opacity(0.12))
-                    )
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body)
-                        .foregroundStyle(theme.colors.ink)
-                    
-                    if let subtitle = subtitle {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-        }
-        .buttonStyle(.plain)
+private struct SettingsStyle: ViewModifier {
+    @Environment(\.homePalette) private var c
+    func body(content: Content) -> some View {
+        content
+            .scrollContentBackground(.hidden)
+            .background(c.bg.ignoresSafeArea())
+            .tint(c.goldText)
     }
-}
-
-// MARK: - Calendar Toggle Row (Unchanged)
-private struct CalendarToggleRow: View {
-    @Environment(\.olanaTheme) private var theme
-    let title: String
-    @Binding var isOn: Bool
-    
-    var body: some View {
-        HStack {
-            Text(title)
-                .font(.body)
-                .foregroundStyle(theme.colors.ink)
-            
-            Spacer()
-            
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(theme.colors.ribbon)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-    }
-}
-
-// MARK: - AlarmKit Setting Card (iOS 26+)
-
-@available(iOS 26.0, *)
-private struct AlarmKitSettingCard: View {
-    @Environment(\.olanaTheme) private var theme
-    @ObservedObject private var settings    = NotificationSettings.shared
-    @ObservedObject private var alarmKit   = AlarmKitManager.shared
-
-    var body: some View {
-        SettingCard(
-            icon: "alarm.fill",
-            iconColor: .red,
-            title: "Alarm Alerts",
-            description: "Full-screen alarms for the most pressing events, even on silent"
-        ) {
-            VStack(spacing: 14) {
-                // Master toggle
-                Toggle("Enable Alarm Alerts", isOn: alarmToggleBinding)
-                    .tint(theme.colors.ribbon)
-
-                // Authorization state — shown only when the toggle is on
-                if settings.urgentAlarmsEnabled || settings.soonAlarmsEnabled {
-                    Divider()
-
-                    switch alarmKit.authorizationState {
-                    case .authorized:
-                        Label("Alarm access granted", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(.green)
-
-                    case .denied:
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label("Alarm access denied", systemImage: "xmark.circle.fill")
-                                .font(.subheadline)
-                                .foregroundStyle(.red)
-                            Text("Go to Settings → Olana → Alarms to allow access.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                    case .notDetermined:
-                        Button {
-                            Task { await alarmKit.requestAuthorization() }
-                        } label: {
-                            Label("Allow Alarm Access", systemImage: "bell.badge.fill")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(theme.colors.ribbon)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                // Descriptive footer
-                Text("Critical-urgency events will trigger a full-screen alarm at their start time, similar to the built-in Clock app.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    /// A binding that requests AlarmKit authorization the first time the user
-    /// turns the toggle on, then falls back to the stored preference.
-    /// A genuine master switch. UrgencyCombiner produces two alarm-worthy tiers —
-    /// `.alarm` for severe events and `.timeSensitive` for the rest of Critical —
-    /// gated on `urgentAlarmsEnabled` and `soonAlarmsEnabled` respectively. Binding
-    /// this control to only the first meant turning "Alarm Alerts" off still let
-    /// alarms through, which reads as the app ignoring you.
-    private var alarmToggleBinding: Binding<Bool> {
-        Binding(
-            get: { settings.urgentAlarmsEnabled || settings.soonAlarmsEnabled },
-            set: { newValue in
-                settings.urgentAlarmsEnabled = newValue
-                settings.soonAlarmsEnabled   = newValue
-                if newValue && alarmKit.authorizationState == .notDetermined {
-                    Task { await alarmKit.requestAuthorization() }
-                }
-            }
-        )
-    }
-}
-
-#Preview {
-    SettingsView()
-        .environmentObject(CalendarIntegrationManager())
-        .environmentObject(CalendarDataStore())
 }

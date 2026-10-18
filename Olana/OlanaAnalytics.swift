@@ -13,6 +13,29 @@ import FirebaseAnalytics
 
 enum OlanaAnalytics {
 
+    // MARK: - Sharing (Settings › Privacy, PRD v3 §3.16)
+
+    private static let shareKey = "olanaShareUsage_v1"
+
+    /// "Share anonymous usage". On by default for the beta; never titles,
+    /// notes, places or links.
+    static var sharing: Bool {
+        UserDefaults.standard.object(forKey: shareKey) as? Bool ?? true
+    }
+
+    /// Turning it off stops collection and deletes what's waiting on this
+    /// phone. What Firebase already received is kept on its retention.
+    static func setSharing(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: shareKey)
+        Analytics.setAnalyticsCollectionEnabled(on)
+        if !on { Analytics.resetAnalyticsData() }
+    }
+
+    /// At launch, after FirebaseApp.configure().
+    static func applySharing() {
+        Analytics.setAnalyticsCollectionEnabled(sharing)
+    }
+
     // MARK: - Events
 
     /// User created a new event.

@@ -41,6 +41,11 @@ enum ExecPreferences {
         get { d.object(forKey: "olanaLeaveAlerts_v1") as? Bool ?? true }
         set { d.set(newValue, forKey: "olanaLeaveAlerts_v1") }
     }
+    /// PRD v3 §3.9 category toggle "Join".
+    static var joinAlerts: Bool {
+        get { d.object(forKey: "olanaJoinAlerts_v1") as? Bool ?? true }
+        set { d.set(newValue, forKey: "olanaJoinAlerts_v1") }
+    }
     /// Directions open here (spec §7.5 "maps app"). Google only when installed.
     static var mapsApp: String {
         get { d.string(forKey: "olanaMapsApp_v1") ?? "apple" }
@@ -56,7 +61,7 @@ enum ExecPreferences {
 
     /// Bumped on any change above, so planVersion changes and alerts are replaced.
     static var version: Int {
-        [defaultMode.rawValue, "\(prepAlerts)\(getReadyAlerts)\(leaveAlerts)",
+        [defaultMode.rawValue, "\(prepAlerts)\(getReadyAlerts)\(leaveAlerts)\(joinAlerts)",
          workHours.map { "\($0.startMinute)-\($0.endMinute)" } ?? "-"].joined().hashValueStable
     }
 }
@@ -166,7 +171,7 @@ enum ExecContext {
             ? QuietHours(startHour: cal.component(.hour, from: n.quietHoursStart), endHour: cal.component(.hour, from: n.quietHoursEnd))
             : nil
         return ExecSettings(prep: ExecPreferences.prepAlerts, getReady: ExecPreferences.getReadyAlerts,
-                            leave: ExecPreferences.leaveAlerts, quiet: quiet, hasPlus: PlusAccess.hasPlus,
+                            leave: ExecPreferences.leaveAlerts, join: ExecPreferences.joinAlerts, quiet: quiet, hasPlus: PlusAccess.hasPlus,
                             settingsVersion: ExecPreferences.version)
     }
 }

@@ -131,6 +131,20 @@ struct HomeFixtureScreen: View {
                         .presentationDetents([.large])
                 }
                 .onAppear { PlusAccess.setDebug(which == "sheet") }
+        } else if which.hasPrefix("settings") {
+            // `-homeFixture settings`, `settings-notifications`, `settings-calendar`, `settings-travel`.
+            Group {
+                switch which {
+                case "settings-notifications": NavigationStack { NotificationsSettingsView() }
+                case "settings-calendar": NavigationStack { CalendarSettingsView() }
+                case "settings-travel": NavigationStack { TravelSettingsView() }
+                default: SettingsView()
+                }
+            }
+            .environmentObject(store)
+            .environmentObject(AppServices.shared.calendarManager)
+            .environmentObject(AppServices.shared.calendarDataStore)
+            .homePalette()
         } else if which == "onboarding" || which == "onboarding-calendar" {
             // `-homeFixture onboarding` (promise) or `onboarding-calendar`.
             OnboardingView(start: which == "onboarding" ? .promise : .calendar) {}.homePalette()
