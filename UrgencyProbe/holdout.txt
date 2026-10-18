@@ -1,0 +1,36 @@
+# Held-out set: titles the prompt was never tuned on. Same format as kind.txt.
+# title | calendar | kind | place | attendance | travel | cue | group
+#
+# X · typed into the add-event box
+coffee with priya at philz 9am | | social | philz | inPerson | yes | no | X
+orthodontist appt thursday 4:30 | | appointment | - | inPerson | yes | no | X
+bio midterm wed 10am room 204 | | exam | room 204 | inPerson | yes | no | X
+teams call with the vendor about renewal 2pm | | meeting | - | virtual | no | no | X
+pick up prescription at cvs after work | | errand | cvs | inPerson | yes | no | X
+ava's soccer practice at riverside field 5pm | | errand/social | riverside field | inPerson | yes | no | X
+finish grant budget by monday | | deliverable/task | - | none | no | no | X
+mom's birthday dinner at the cheesecake factory sat 7 | | social | cheesecake factory | inPerson | yes | no | X
+job interview at stripe 11am | | interview | stripe | inPerson | yes | no | X
+dmv to renew license tuesday 9am | | appointment/errand/paperwork | dmv | inPerson | yes | no | X
+facetime grandma sunday | | social | - | virtual | no | no | X
+host game night friday | | hosting | - | inPerson | no | no | X
+clean out the garage saturday | | task | - | none | no | no | X
+flu shot at walgreens | | appointment/errand | walgreens | inPerson | yes | no | X
+standup 9:30 | | meeting | - | ? | ? | no | X
+parent teacher night at lincoln elementary 6pm | | meeting/appointment | lincoln elementary | inPerson | yes | no | X
+5k at golden gate park sunday 8am | | performance/workout | golden gate park | inPerson | yes | no | X
+present roadmap to the exec team thursday | | presentation | - | ? | ? | no | X
+team offsite tomorrow, bring snacks | | meeting/social | - | inPerson | ? | yes | X
+office closed for thanksgiving | | marker | - | none | no | no | X
+call the insurance company about the claim | | paperwork/task/meeting | - | virtual | no | no | X
+drop off donations at goodwill saturday | | errand | goodwill | inPerson | yes | no | X
+#
+# Y · synced calendar titles
+Q4 planning offsite | Work | meeting | - | inPerson | ? | no | Y
+Pediatrician - Maya well visit | Family | appointment | - | inPerson | yes | no | Y
+CPA meeting re: taxes, bring 1099s | Personal | meeting/appointment | - | inPerson | yes | yes | Y
+Organic chemistry final | School | exam | - | inPerson | yes | no | Y
+Board deck due | Work | deliverable | - | none | no | no | Y
+Lunch & learn: intro to SQL | Work | class/meeting | - | ? | ? | no | Y
+Sarah's wedding | Personal | social | - | inPerson | yes | no | Y
+Mortgage signing at the title office | Personal | paperwork/appointment | title office | inPerson | yes | no | Y

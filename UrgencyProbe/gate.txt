@@ -1,0 +1,75 @@
+# Prep gate test (Spikes gate). Labels are what a person would want, not what
+# the prompt says. "/" separates acceptable answers.
+# title | calendar | expected category | expected prep (none short medium long some ?) | group
+#
+# A · gated category, no prep: the gate should be harmless
+Dentist appointment | Personal | health | none | A
+Annual physical | Personal | health | none | A
+Allergy shot | | health | none | A
+Physical therapy | Personal | health | none | A
+Therapy session | Personal | health | none | A
+Gym | Personal | fitness | none | A
+Yoga class | | fitness | none | A
+Morning run | Personal | fitness | none | A
+Spin class | Personal | fitness | none | A
+Flight to Chicago | Travel | travel | none | A
+Train to Boston | | travel | none | A
+Hotel check-in | Travel | travel | none | A
+Airport pickup for Mom | Family | travel/family | none | A
+DMV appointment | Personal | admin | none | A
+Renew car registration | Personal | admin | none/short | A
+Oil change | Personal | admin/personal | none | A
+#
+# B · gated category, real prep: blocked by design today
+Colonoscopy | Personal | health | medium/long | B
+Fasting blood draw | Personal | health | short/medium | B
+Pre-op appointment, bring medication list | Personal | health | short | B
+Half marathon race day | Personal | fitness | long | B
+Powerlifting meet | | fitness | long | B
+Pack for Tokyo trip | Travel | travel | short/medium | B
+Visa interview at consulate | Travel | travel/admin/legalFinance | short/medium | B
+Passport renewal forms due | Personal | admin/legalFinance | short | B
+Insurance claim paperwork due | Personal | admin/legalFinance | short | B
+Moving day | Personal | admin/personal/family | long | B
+#
+# C · real prep, at risk of landing in a gated category
+Travel expense report due | Work | work | short | C
+Medical board exam | School | education | long | C
+Present at health conference | Work | work | medium | C
+Personal trainer certification exam | | education | long | C
+Nursing clinical skills exam | School | education | medium/long | C
+Pitch to fitness startup investors | Work | work | medium | C
+Write travel blog post | Personal | personal/work | short | C
+Grant application for clinic due | Work | work | medium/long | C
+DMV written knowledge test | Personal | admin/education | short | C
+Driver's license road test | Personal | admin/education | short | C
+Hospital board presentation | Work | work | medium | C
+Physiotherapy school final exam | School | education | long | C
+#
+# D · allowed category, prep
+Presentation to the board | Work | work | medium | D
+Final exam | School | education | long | D
+Hosting dinner for 12 | Personal | social/family | medium | D
+Best man speech | Personal | social/family | medium | D
+Job interview | Work | work | short/medium | D
+Thesis defense | School | education | long | D
+Tax filing | | legalFinance | medium | D
+Quarterly report due | Work | work | medium | D
+Piano recital (performing) | Personal | personal/education | long | D
+Client pitch | Work | work | medium | D
+Book club | Personal | social | short | D
+Homework due | School | education | short/medium | D
+#
+# E · allowed category, no prep
+Team standup | Work | work | none | E
+Coffee with Sam | Personal | social | none | E
+Dinner with parents | Family | family | none | E
+Kid's soccer game | Family | family | none | E
+Birthday party | Personal | social/family | none | E
+Movie night | Personal | personal/social | none | E
+Payday | | legalFinance/personal | none | E
+Lunch with the team | Work | work/social | none | E
+Call Mom | Family | family | none | E
+Sprint planning | Work | work | none/short | E
+1:1 with manager | Work | work | none/short | E
+Parent-teacher conference | Family | family/education | none/short | E

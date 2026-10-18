@@ -1,0 +1,31 @@
+# Prep labels for holdout.txt, in gate.txt's format: title | calendar | category | prep | group
+coffee with priya at philz 9am | | ? | none | X
+orthodontist appt thursday 4:30 | | ? | none | X
+bio midterm wed 10am room 204 | | ? | medium/long | X
+teams call with the vendor about renewal 2pm | | ? | none/short | X
+pick up prescription at cvs after work | | ? | none | X
+ava's soccer practice at riverside field 5pm | | ? | none | X
+finish grant budget by monday | | ? | ? | X
+mom's birthday dinner at the cheesecake factory sat 7 | | ? | none | X
+job interview at stripe 11am | | ? | short/medium | X
+dmv to renew license tuesday 9am | | ? | none/short | X
+facetime grandma sunday | | ? | none | X
+host game night friday | | ? | short/medium | X
+clean out the garage saturday | | ? | none | X
+flu shot at walgreens | | ? | none | X
+standup 9:30 | | ? | none | X
+parent teacher night at lincoln elementary 6pm | | ? | none/short | X
+5k at golden gate park sunday 8am | | ? | ? | X
+present roadmap to the exec team thursday | | ? | medium | X
+team offsite tomorrow, bring snacks | | ? | short | X
+office closed for thanksgiving | | ? | none | X
+call the insurance company about the claim | | ? | none/short | X
+drop off donations at goodwill saturday | | ? | none | X
+Q4 planning offsite | Work | ? | none/short | Y
+Pediatrician - Maya well visit | Family | ? | none | Y
+CPA meeting re: taxes, bring 1099s | Personal | ? | short | Y
+Organic chemistry final | School | ? | long | Y
+Board deck due | Work | ? | medium | Y
+Lunch & learn: intro to SQL | Work | ? | none | Y
+Sarah's wedding | Personal | ? | none | Y
+Mortgage signing at the title office | Personal | ? | none/short | Y

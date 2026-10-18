@@ -1,0 +1,44 @@
+Kind + logistics · 30 events
+
+TITLE                                   G  WANT KIND         GOT          PLACE                 ATT       TRV  CUE  WRONG
+----------------------------------------------------------------------------------------------------------------------------------
+coffee with priya at philz 9am          X  social            social       philz                 inPerson  yes  no   
+orthodontist appt thursday 4:30         X  appointment       appointment  -                     inPerson  yes  no   
+bio midterm wed 10am room 204           X  exam              exam         -                     inPerson  yes  no   place
+teams call with the vendor about renewa X  meeting           meeting      -                     virtual   no   yes  cue
+pick up prescription at cvs after work  X  errand            appointment  cvs                   inPerson  yes  no   kind
+ava's soccer practice at riverside fiel X  errand/social     workout      riverside field       inPerson  yes  no   kind
+finish grant budget by monday           X  deliverable/task  deliverable  -                     none      no   yes  cue
+mom's birthday dinner at the cheesecake X  social            social       cheesecake factory    inPerson  yes  no   
+job interview at stripe 11am            X  interview         interview    stripe                inPerson  yes  no   
+dmv to renew license tuesday 9am        X  appointment/erran appointment  dmv                   inPerson  yes  no   
+facetime grandma sunday                 X  social            social       -                     virtual   no   no   
+host game night friday                  X  hosting           hosting      -                     inPerson  no   no   
+clean out the garage saturday           X  task              task         -                     inPerson  no   no   att
+flu shot at walgreens                   X  appointment/erran appointment  walgreens             inPerson  yes  no   
+standup 9:30                            X  meeting           performance  -                     virtual   no   no   kind
+parent teacher night at lincoln element X  meeting/appointme social       lincoln elementary    inPerson  yes  no   kind
+5k at golden gate park sunday 8am       X  performance/worko workout      -                     inPerson  yes  no   place
+present roadmap to the exec team thursd X  presentation      presentation -                     inPerson  yes  yes  cue
+team offsite tomorrow, bring snacks     X  meeting/social    meeting      -                     inPerson  no   yes  
+office closed for thanksgiving          X  marker            marker       -                     none      no   no   
+call the insurance company about the cl X  paperwork/task/me appointment  -                     virtual   no   yes  kind,cue
+drop off donations at goodwill saturday X  errand            errand       -                     inPerson  yes  no   place
+Q4 planning offsite                     Y  meeting           meeting      -                     inPerson  no   no   
+Pediatrician - Maya well visit          Y  appointment       appointment  -                     inPerson  yes  no   
+CPA meeting re: taxes, bring 1099s      Y  meeting/appointme meeting      CPA meeting           inPerson  yes  yes  place
+Organic chemistry final                 Y  exam              exam         -                     inPerson  yes  no   
+Board deck due                          Y  deliverable       deliverable  -                     none      no   no   
+Lunch & learn: intro to SQL             Y  class/meeting     class        -                     inPerson  yes  no   
+Sarah's wedding                         Y  social            social       -                     inPerson  yes  no   
+Mortgage signing at the title office    Y  paperwork/appoint deliverable  title office          inPerson  no   no   kind,travel
+
+SUMMARY
+======================================================================================================================
+GROUP                   KIND        PLACE       ATTEND      TRAVEL      CUE         PREP kind/+cue    FAILS
+X held out, typed       17/22 77%   19/22 86%   19/20 95%   19/19 100%  18/22 82%   90% / 95%         0
+Y held out, synced      7/8 88%     7/8 88%     7/7 100%    5/6 83%     8/8 100%    88% / 100%        0
+ALL                     24/30 80%   26/30 87%   26/27 96%   24/25 96%   26/30 87%   89% / 96%         0
+
+Place, no place in text (left empty): 17/18 94%   place in text (copied right): 9/12 75%
+Kind confusions: paperwork/task/meeting → appointment ×1; errand → appointment ×1; errand/social → workout ×1; paperwork/appointment → deliverable ×1; meeting → performance ×1; meeting/appointment → social ×1

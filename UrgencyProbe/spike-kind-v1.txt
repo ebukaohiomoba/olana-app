@@ -1,0 +1,106 @@
+Kind + logistics · 88 events
+
+TITLE                                   G  WANT KIND         GOT          PLACE                 ATT       TRV  CUE  WRONG
+----------------------------------------------------------------------------------------------------------------------------------
+Dentist appointment                     A  appointment       appointment  Dentist appointment   inPerson  yes  no   place
+Annual physical                         A  appointment       appointment  -                     inPerson  yes  no   
+Allergy shot                            A  appointment       appointment  Allergy shot          inPerson  no   no   place,travel
+Physical therapy                        A  appointment       appointment  Physical therapy      inPerson  yes  no   place
+Therapy session                         A  appointment       appointment  -                     inPerson  no   no   
+Gym                                     A  workout           workout      Gym                   inPerson  no   no   place,travel
+Yoga class                              A  workout/class     workout      Yoga class            inPerson  no   no   place,travel
+Morning run                             A  workout           workout      -                     inPerson  no   no   
+Spin class                              A  workout           workout      -                     inPerson  no   no   travel
+Flight to Chicago                       A  trip              trip         Chicago               inPerson  yes  no   place
+Train to Boston                         A  trip              trip         Train to Boston       inPerson  yes  no   place
+Hotel check-in                          A  trip              trip         Hotel check-in        inPerson  yes  no   place
+Airport pickup for Mom                  A  errand            errand       Airport               inPerson  yes  no   
+DMV appointment                         A  appointment       appointment  DMV                   inPerson  yes  no   
+Renew car registration                  A  paperwork/errand  paperwork    Renew car registratio inPerson  yes  no   place
+Oil change                              A  errand/appointmen appointment  Oil change            inPerson  yes  no   place
+Colonoscopy                             B  procedure         procedure    Colonoscopy           inPerson  yes  no   place
+Fasting blood draw                      B  procedure         procedure    Fasting blood draw    inPerson  yes  no   place
+Pre-op appointment, bring medication li B  procedure/appoint appointment  Pre-op appointment    inPerson  yes  yes  place
+Half marathon race day                  B  performance       performance  Half marathon race    inPerson  yes  no   place
+Powerlifting meet                       B  performance       performance  Powerlifting meet     inPerson  yes  no   place
+Pack for Tokyo trip                     B  task              trip         Tokyo                 inPerson  yes  no   kind,place,att,travel
+Visa interview at consulate             B  interview         interview    consulate             inPerson  yes  no   
+Passport renewal forms due              B  paperwork         paperwork    Passport renewal form none      no   no   place
+Insurance claim paperwork due           B  paperwork         paperwork    Insurance claim paper none      no   no   place
+Moving day                              B  task              trip         Moving day            inPerson  yes  no   kind,place
+Travel expense report due               C  paperwork/deliver deliverable  Travel expense report none      yes  no   place,travel
+Medical board exam                      C  exam              exam         Medical board exam    inPerson  yes  no   place
+Present at health conference            C  presentation      presentation health conference     inPerson  yes  no   place
+Personal trainer certification exam     C  exam              exam         Personal trainer cert inPerson  yes  no   place
+Nursing clinical skills exam            C  exam              exam         Nursing clinical skil inPerson  yes  no   place
+Pitch to fitness startup investors      C  presentation      presentation Pitch to fitness star inPerson  no   no   place
+Write travel blog post                  C  deliverable       deliverable  Write travel blog pos none      no   no   place
+Grant application for clinic due        C  deliverable       deliverable  Grant application for none      no   no   place
+DMV written knowledge test              C  exam              exam         DMV                   inPerson  yes  no   
+Driver's license road test              C  exam              exam         Driver's license road inPerson  yes  no   place
+Hospital board presentation             C  presentation      presentation Hospital board        inPerson  yes  no   place
+Physiotherapy school final exam         C  exam              exam         Physiotherapy school  inPerson  yes  no   place
+Presentation to the board               D  presentation      presentation to the board          inPerson  no   no   place
+Final exam                              D  exam              exam         School                inPerson  no   no   place,travel
+Hosting dinner for 12                   D  hosting           hosting      Hosting dinner for 12 inPerson  no   no   place
+Best man speech                         D  presentation/perf presentation Wedding               inPerson  yes  no   place
+Job interview                           D  interview         interview    Work                  inPerson  yes  no   place
+Thesis defense                          D  exam/presentation performance  Thesis defense        inPerson  yes  yes  kind,place,cue
+Tax filing                              D  deliverable/paper paperwork    Tax filing            none      no   no   place
+Quarterly report due                    D  deliverable       deliverable  Quarterly report due  none      no   no   place
+Piano recital (performing)              D  performance       performance  Piano recital         inPerson  no   no   place,travel
+Client pitch                            D  presentation      presentation Client                inPerson  yes  no   place
+Book club                               D  social            social       Book club             inPerson  no   no   place,travel
+Homework due                            D  deliverable       deliverable  Homework              none      no   no   place
+Team standup                            E  meeting           meeting      Team standup          inPerson  no   no   place
+Coffee with Sam                         E  social            social       Coffee with Sam       inPerson  no   no   place,travel
+Dinner with parents                     E  social            social       Dinner with parents   inPerson  no   no   place,travel
+Kid's soccer game                       E  social            performance  Kid's soccer game     inPerson  yes  no   kind,place
+Birthday party                          E  social            social       Birthday party        inPerson  no   no   place,travel
+Movie night                             E  social            social       Movie night           inPerson  no   no   place
+Payday                                  E  marker            marker       -                     none      no   no   
+Lunch with the team                     E  social/meeting    social       Lunch with the team   inPerson  no   no   place
+Call Mom                                E  social            appointment  Mom                   inPerson  yes  no   kind,place,att,travel
+Sprint planning                         E  meeting           meeting      Sprint planning       inPerson  no   no   place
+1:1 with manager                        E  meeting           interview    1:1 with manager      inPerson  no   no   kind,place
+Parent-teacher conference               E  meeting/appointme meeting      Parent-teacher confer inPerson  yes  no   place
+Meet parents for food at Olive Garden   F  social            social       Olive Garden          inPerson  yes  no   
+Dinner at Nobu with Sarah               F  social            social       Nobu                  inPerson  yes  no   
+Haircut at Supercuts                    F  appointment       appointment  Supercuts             inPerson  yes  no   
+Coffee at Blue Bottle on Market St      F  social            social       Blue Bottle on Market inPerson  yes  no   
+Doctor's appointment at Kaiser Oakland  F  appointment       appointment  Kaiser Oakland        inPerson  yes  no   
+Team offsite at the Hyatt               F  meeting           meeting      Hyatt                 inPerson  yes  no   
+Soccer practice at Lincoln Park         F  workout           workout      Lincoln Park          inPerson  yes  no   
+Flight to Denver, SFO terminal 2        F  trip              trip         SFO terminal 2        inPerson  yes  no   
+Drop kids at school                     F  errand            errand       school                inPerson  yes  no   
+Pick up dry cleaning                    F  errand            errand       dry cleaning          inPerson  yes  no   place
+Zoom call with design team              F  meeting           meeting      Zoom call with design virtual   no   no   place
+Teams sync with vendor                  F  meeting           meeting      Teams                 virtual   no   no   place
+Webinar: intro to dbt                   F  class             meeting      Webinar: intro to dbt virtual   no   no   kind,place
+Call with recruiter                     F  interview/meeting interview    Call with recruiter   inPerson  no   no   place,att
+Work from home                          F  marker            meeting      Work                  none      no   no   kind,place
+Sync to review the deck                 G  meeting           task         -                     virtual   no   yes  kind
+Team dinner, bring slides               G  social            social       Team dinner           inPerson  no   yes  place,travel
+1:1, send agenda first                  G  meeting           interview    Work                  inPerson  no   yes  kind,place
+Standup, update Jira before             G  meeting           presentation Jira                  inPerson  yes  yes  kind,place
+Book club, finish chapter 12            G  social            task         Book club             inPerson  no   yes  kind,place,travel
+Potluck, bring a dish                   G  social            social       Potluck               inPerson  yes  yes  place
+Design review, print mockups            G  meeting           presentation Design review, print  inPerson  no   no   kind,place,cue
+Parent-teacher conference, bring report G  meeting/appointme presentation Parent-teacher confer inPerson  yes  yes  kind,place
+Dentist, bring insurance card           G  appointment       appointment  Dentist               inPerson  yes  yes  place
+Quick sync                              G  meeting           meeting      Work                  inPerson  no   no   place
+Weekly team meeting                     G  meeting           meeting      Weekly team meeting   inPerson  no   no   place
+
+SUMMARY
+======================================================================================================================
+GROUP                   KIND        PLACE       ATTEND      TRAVEL      CUE         PREP kind/+cue    FAILS
+A gated, no prep        16/16 100%  6/16 38%    15/15 100%  10/14 71%   16/16 100%  81% / 81%         0
+B gated, real prep      8/10 80%    1/10 10%    9/10 90%    8/9 89%     10/10 100%  90% / 100%        0
+C prep, risk of gated   12/12 100%  1/12 8%     12/12 100%  10/11 91%   12/12 100%  100% / 100%       0
+D allowed, prep         11/12 92%   0/12 0%     12/12 100%  6/9 67%     11/12 92%   92% / 92%         0
+E allowed, no prep      9/12 75%    1/12 8%     11/12 92%   3/7 43%     12/12 100%  92% / 92%         0
+F place and travel      13/15 87%   9/15 60%    14/15 93%   15/15 100%  15/15 100%  -                 0
+G explicit cue          5/11 45%    1/11 9%     6/6 100%    3/5 60%     10/11 91%   -                 0
+ALL                     74/88 84%   19/88 22%   79/82 96%   55/70 79%   86/88 98%   90% / 92%         0
+
+Kind confusions: task → trip ×2; meeting → presentation ×2; meeting → interview ×2; social → task ×1; marker → meeting ×1; meeting/appointment → presentation ×1; meeting → task ×1; class → meeting ×1; exam/presentation → performance ×1; social → appointment ×1; social → performance ×1

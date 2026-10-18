@@ -1,0 +1,133 @@
+# Kind + logistics test (draft labels, for review). "/" separates acceptable
+# answers, "?" means don't score. place is the text the model should copy out
+# of the title, "-" for none. cue: does the title name something to bring,
+# review or finish first?
+#
+# kinds: exam performance presentation deliverable hosting interview procedure
+#        paperwork meeting appointment class workout social trip errand task marker
+#
+# title | calendar | kind | place | attendance | travel | cue | group
+#
+# A · gated category, no prep
+Dentist appointment | Personal | appointment | - | inPerson | yes | no | A
+Annual physical | Personal | appointment | - | inPerson | yes | no | A
+Allergy shot | | appointment | - | inPerson | yes | no | A
+Physical therapy | Personal | appointment | - | inPerson | yes | no | A
+Therapy session | Personal | appointment | - | inPerson/virtual | ? | no | A
+Gym | Personal | workout | - | inPerson | yes | no | A
+Yoga class | | workout/class | - | inPerson | yes | no | A
+Morning run | Personal | workout | - | inPerson | no | no | A
+Spin class | Personal | workout | - | inPerson | yes | no | A
+Flight to Chicago | Travel | trip | - | inPerson | yes | no | A
+Train to Boston | | trip | - | inPerson | yes | no | A
+Hotel check-in | Travel | trip | - | inPerson | yes | no | A
+Airport pickup for Mom | Family | errand | airport | inPerson | yes | no | A
+DMV appointment | Personal | appointment | DMV | inPerson | yes | no | A
+Renew car registration | Personal | paperwork/errand | - | ? | ? | no | A
+Oil change | Personal | errand/appointment | - | inPerson | yes | no | A
+#
+# B · gated category, real prep
+Colonoscopy | Personal | procedure | - | inPerson | yes | no | B
+Fasting blood draw | Personal | procedure | - | inPerson | yes | no | B
+Pre-op appointment, bring medication list | Personal | procedure/appointment | - | inPerson | yes | yes | B
+Half marathon race day | Personal | performance | - | inPerson | yes | no | B
+Powerlifting meet | | performance | - | inPerson | yes | no | B
+Pack for Tokyo trip | Travel | task | - | none | no | no | B
+Visa interview at consulate | Travel | interview | consulate | inPerson | yes | no | B
+Passport renewal forms due | Personal | paperwork | - | none | no | no | B
+Insurance claim paperwork due | Personal | paperwork | - | none | no | no | B
+Moving day | Personal | task | - | inPerson | ? | no | B
+#
+# C · real prep, at risk of a wrong category
+Travel expense report due | Work | paperwork/deliverable | - | none | no | no | C
+Medical board exam | School | exam | - | inPerson | yes | no | C
+Present at health conference | Work | presentation | - | inPerson | yes | no | C
+Personal trainer certification exam | | exam | - | inPerson | yes | no | C
+Nursing clinical skills exam | School | exam | - | inPerson | yes | no | C
+Pitch to fitness startup investors | Work | presentation | - | inPerson/virtual | ? | no | C
+Write travel blog post | Personal | deliverable | - | none | no | no | C
+Grant application for clinic due | Work | deliverable | - | none | no | no | C
+DMV written knowledge test | Personal | exam | DMV | inPerson | yes | no | C
+Driver's license road test | Personal | exam | - | inPerson | yes | no | C
+Hospital board presentation | Work | presentation | - | inPerson | yes | no | C
+Physiotherapy school final exam | School | exam | - | inPerson | yes | no | C
+#
+# D · allowed category, prep
+Presentation to the board | Work | presentation | - | inPerson/virtual | ? | no | D
+Final exam | School | exam | - | inPerson | yes | no | D
+Hosting dinner for 12 | Personal | hosting | - | inPerson | no | no | D
+Best man speech | Personal | presentation/performance | - | inPerson | yes | no | D
+Job interview | Work | interview | - | inPerson/virtual | ? | no | D
+Thesis defense | School | exam/presentation | - | inPerson | yes | no | D
+Tax filing | | deliverable/paperwork | - | none | no | no | D
+Quarterly report due | Work | deliverable | - | none | no | no | D
+Piano recital (performing) | Personal | performance | - | inPerson | yes | no | D
+Client pitch | Work | presentation | - | inPerson/virtual | ? | no | D
+Book club | Personal | social | - | inPerson | yes | no | D
+Homework due | School | deliverable | - | none | no | no | D
+#
+# E · allowed category, no prep
+Team standup | Work | meeting | - | inPerson/virtual | ? | no | E
+Coffee with Sam | Personal | social | - | inPerson | yes | no | E
+Dinner with parents | Family | social | - | inPerson | yes | no | E
+Kid's soccer game | Family | social | - | inPerson | yes | no | E
+Birthday party | Personal | social | - | inPerson | yes | no | E
+Movie night | Personal | social | - | inPerson | ? | no | E
+Payday | | marker | - | none | no | no | E
+Lunch with the team | Work | social/meeting | - | inPerson | ? | no | E
+Call Mom | Family | social | - | virtual/none | no | no | E
+Sprint planning | Work | meeting | - | inPerson/virtual | ? | no | E
+1:1 with manager | Work | meeting | - | inPerson/virtual | ? | no | E
+Parent-teacher conference | Family | meeting/appointment | - | inPerson | yes | no | E
+#
+# F · place and travel
+Meet parents for food at Olive Garden | Family | social | Olive Garden | inPerson | yes | no | F
+Dinner at Nobu with Sarah | Personal | social | Nobu | inPerson | yes | no | F
+Haircut at Supercuts | Personal | appointment | Supercuts | inPerson | yes | no | F
+Coffee at Blue Bottle on Market St | Personal | social | Blue Bottle on Market St | inPerson | yes | no | F
+Doctor's appointment at Kaiser Oakland | Personal | appointment | Kaiser Oakland | inPerson | yes | no | F
+Team offsite at the Hyatt | Work | meeting | the Hyatt | inPerson | yes | no | F
+Soccer practice at Lincoln Park | Family | workout | Lincoln Park | inPerson | yes | no | F
+Flight to Denver, SFO terminal 2 | Travel | trip | SFO terminal 2 | inPerson | yes | no | F
+Drop kids at school | Family | errand | school | inPerson | yes | no | F
+Pick up dry cleaning | Personal | errand | - | inPerson | yes | no | F
+Zoom call with design team | Work | meeting | - | virtual | no | no | F
+Teams sync with vendor | Work | meeting | - | virtual | no | no | F
+Webinar: intro to dbt | Work | class | - | virtual | no | no | F
+Call with recruiter | Work | interview/meeting | - | virtual/none | no | no | F
+Work from home | Work | marker | - | none | no | no | F
+#
+# G · ordinary kind, explicit cue (decides the cue flag)
+Sync to review the deck | Work | meeting | - | ? | ? | yes | G
+Team dinner, bring slides | Work | social | - | inPerson | yes | yes | G
+1:1, send agenda first | Work | meeting | - | ? | ? | yes | G
+Standup, update Jira before | Work | meeting | - | ? | ? | yes | G
+Book club, finish chapter 12 | Personal | social | - | inPerson | yes | yes | G
+Potluck, bring a dish | Personal | social | - | inPerson | yes | yes | G
+Design review, print mockups | Work | meeting | - | inPerson | ? | yes | G
+Parent-teacher conference, bring report card | Family | meeting/appointment | - | inPerson | yes | yes | G
+Dentist, bring insurance card | Personal | appointment | - | inPerson | yes | yes | G
+Quick sync | Work | meeting | - | ? | ? | no | G
+Weekly team meeting | Work | meeting | - | ? | ? | no | G
+#
+# H · typed into the add-event box (native, no calendar name)
+dinner with mom at olive garden friday 7pm | | social | olive garden | inPerson | yes | no | H
+dentist tues 3pm | | appointment | - | inPerson | yes | no | H
+haircut at great clips saturday 10am | | appointment | great clips | inPerson | yes | no | H
+lunch w/ jen at sweetgreen noon tmrw | | social | sweetgreen | inPerson | yes | no | H
+chem final monday 9am in hall b | | exam | hall b | inPerson | yes | no | H
+zoom w/ landlord about lease thurs 4 | | meeting/appointment | - | virtual | no | no | H
+pick up kids from school at 3 | | errand | school | inPerson | yes | no | H
+submit expense report by friday | | paperwork/deliverable | - | none | no | no | H
+run club at the reservoir sunday 7am | | workout | reservoir | inPerson | yes | no | H
+call dad tonight | | social | - | virtual/none | no | no | H
+vet appt for max at banfield 11am | | appointment | banfield | inPerson | yes | no | H
+present q3 results to leadership wed 2pm | | presentation | - | inPerson/virtual | ? | no | H
+drinks with the team at the tipsy cow after work | | social | tipsy cow | inPerson | yes | no | H
+pay rent | | paperwork/task | - | none | no | no | H
+book club at sara's, finish the book | | social | sara's | inPerson | yes | yes | H
+grocery run trader joe's | | errand | trader joe's | inPerson | yes | no | H
+interview at google mountain view 10am | | interview | google mountain view/google | inPerson | yes | no | H
+yoga 6pm | | workout/class | - | inPerson | yes | no | H
+flight to atlanta 8am from lax | | trip | lax | inPerson | yes | no | H
+work on thesis draft all afternoon | | task/deliverable | - | none | no | no | H

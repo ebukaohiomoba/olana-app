@@ -1,0 +1,80 @@
+Prep gate · 62 events · gated categories: admin, fitness, health, travel
+
+TITLE                                 G  WANT CAT              GOT CAT       WANT PREP    MODEL   AFTER GATE NOTE
+-----------------------------------------------------------------------------------------------------------------------------
+Dentist appointment                   A  health                health        none         none    none       
+Annual physical                       A  health                health        none         none    none       
+Allergy shot                          A  health                health        none         none    none       
+Physical therapy                      A  health                health        none         none    none       
+Therapy session                       A  health                personal      none         none    none       wrong side of gate
+Gym                                   A  fitness               fitness       none         none    none       
+Yoga class                            A  fitness               fitness       none         none    none       
+Morning run                           A  fitness               fitness       none         none    none       
+Spin class                            A  fitness               fitness       none         none    none       
+Flight to Chicago                     A  travel                travel        none         none    none       
+Train to Boston                       A  travel                travel        none         none    none       
+Hotel check-in                        A  travel                travel        none         none    none       
+Airport pickup for Mom                A  travel/family         family        none         none    none       
+DMV appointment                       A  admin                 admin         none         none    none       
+Renew car registration                A  admin                 personal      none/short   none    none       wrong side of gate
+Oil change                            A  admin/personal        fitness       none         none    none       
+Colonoscopy                           B  health                health        medium/long  none    none       
+Fasting blood draw                    B  health                health        short/medium none    none       
+Pre-op appointment, bring medication  B  health                health        short        none    none       
+Half marathon race day                B  fitness               fitness       long         medium  none       gate blocked (by design)
+Powerlifting meet                     B  fitness               fitness       long         none    none       
+Pack for Tokyo trip                   B  travel                travel        short/medium none    none       
+Visa interview at consulate           B  travel/admin/legalFin travel        short/medium none    none       
+Passport renewal forms due            B  admin/legalFinance    personal      short        medium  medium     
+Insurance claim paperwork due         B  admin/legalFinance    personal      short        medium  medium     
+Moving day                            B  admin/personal/family personal      long         none    none       
+Travel expense report due             C  work                  work          short        medium  medium     
+Medical board exam                    C  education             education     long         medium  medium     
+Present at health conference          C  work                  health        medium       none    none       wrong side of gate
+Personal trainer certification exam   C  education             education     long         medium  medium     
+Nursing clinical skills exam          C  education             education     medium/long  medium  medium     
+Pitch to fitness startup investors    C  work                  work          medium       medium  medium     
+Write travel blog post                C  personal/work         travel        short        medium  none       gate blocked (WRONG CATEGORY)
+Grant application for clinic due      C  work                  work          medium/long  medium  medium     
+DMV written knowledge test            C  admin/education       admin         short        none    none       
+Driver's license road test            C  admin/education       personal      short        medium  medium     
+Hospital board presentation           C  work                  work          medium       medium  medium     
+Physiotherapy school final exam       C  education             education     long         medium  medium     
+Presentation to the board             D  work                  work          medium       medium  medium     
+Final exam                            D  education             education     long         medium  medium     
+Hosting dinner for 12                 D  social/family         social        medium       medium  medium     
+Best man speech                       D  social/family         family        medium       medium  medium     
+Job interview                         D  work                  work          short/medium medium  medium     
+Thesis defense                        D  education             education     long         long    long       
+Tax filing                            D  FAIL
+Quarterly report due                  D  work                  work          medium       medium  medium     
+Piano recital (performing)            D  personal/education    social        long         medium  medium     
+Client pitch                          D  work                  work          medium       medium  medium     
+Book club                             D  social                social        short        none    none       
+Homework due                          D  education             education     short/medium short   short      
+Team standup                          E  work                  work          none         none    none       
+Coffee with Sam                       E  social                personal      none         none    none       
+Dinner with parents                   E  family                family        none         none    none       
+Kid's soccer game                     E  family                family        none         none    none       
+Birthday party                        E  social/family         personal      none         none    none       
+Movie night                           E  personal/social       personal      none         none    none       
+Payday                                E  legalFinance/personal personal      none         none    none       
+Lunch with the team                   E  work/social           social        none         none    none       
+Call Mom                              E  family                family        none         none    none       
+Sprint planning                       E  work                  work          none/short   medium  medium     
+1:1 with manager                      E  work                  work          none/short   medium  medium     
+Parent-teacher conference             E  family/education      family        none/short   medium  medium     
+
+SUMMARY (prep: has-prep right / exact bucket right)
+========================================================================================================
+GROUP                   CATEGORY    GATE SIDE   PREP WITH GATE      PREP WITHOUT GATE   FAILS
+A gated, no prep        13/16 81%   14/16 88%   100% / 100%         100% / 100%         0
+B gated, real prep      8/10 80%    10/10 100%  20% / 0%            30% / 0%            0
+C prep, risk of gated   9/12 75%    10/12 83%   75% / 33%           83% / 33%           0
+D allowed, prep         10/11 91%   11/11 100%  91% / 73%           91% / 73%           1
+E allowed, no prep      10/12 83%   12/12 100%  100% / 75%          100% / 75%          0
+ALL                     50/61 82%   57/61 93%   80% / 61%           84% / 61%           1
+
+Gate saved (model claimed prep, none wanted): 0  
+Gate blocked (prep wanted, gate removed it): 2  Half marathon race day (fitness); Write travel blog post (travel)
+Wrong side of the gate: 4  Therapy session → personal; Renew car registration → personal; Present at health conference → health; Write travel blog post → travel
