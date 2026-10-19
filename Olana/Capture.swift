@@ -396,14 +396,77 @@ struct CaptureDraft: Equatable {
         return !isTask && e.placeText == nil && e.meetingURL == nil && e.attendance != .virtual
             && (e.likelyNeedsTravel || e.attendance == .inPerson)
     }
+
+    /// A place or a meeting link makes it an event: tasks have neither (§1.7a).
+    var impliesEvent: Bool {
+        let e = effective
+        return e.placeText != nil || e.meetingURL != nil
+    }
+
+    /// A new read of an edited message. Chips that read the same keep what the
+    /// user did to them (removed, or a place picked from "Which one?").
+    func reparsed(_ r: CaptureResult, message: String) -> CaptureDraft {
+        var next = CaptureDraft(result: r, message: message)
+        if r.placeText != nil, r.placeText == result.placeText {
+            next.match = match
+            next.picked = picked
+            if removed.contains(.place) { next.removed.insert(.place) }
+        }
+        if r.meetingURL != nil, r.meetingURL == result.meetingURL, removed.contains(.link) { next.removed.insert(.link) }
+        if r.arriveEarlyText != nil, r.arriveEarlyText == result.arriveEarlyText, removed.contains(.early) {
+            next.removed.insert(.early)
+        }
+        for id in removed {
+            switch id {
+            case .bring(let t) where r.bring.contains(t): next.removed.insert(id)
+            case .step(let t) where r.steps.contains(t): next.removed.insert(id)
+            default: break
+            }
+        }
+        return next
+    }
+
+    /// The title with chip words taken out of `base`. Tasks show no place or
+    /// arrive-early chip, so those words stay in a task's title.
+    func title(_ base: String, isTask: Bool) -> String {
+        var shown = effective
+        if isTask { shown.placeText = nil; shown.arriveEarlyText = nil }
+        return CaptureCode.title(base, removing: CaptureCode.chipPhrases(shown, message: message))
+    }
+
+    /// What the 📍 chip says, including what MapKit found: the place's name and
+    /// address, "Which …?", or "not found" (no leave-by).
+    var placeChip: (label: String, detail: String?, found: Bool?)? {
+        guard let words = effective.placeText else { return nil }
+        if let picked { return (picked.name, picked.address, true) }
+        switch match {
+        case .resolved(let p)?: return (p.name, p.address, true)
+        case .choose?: return ("Which \(words)?", nil, nil)
+        case PlaceMatch.none?: return (words, "not found", false)
+        default: return (words, nil, nil)
+        }
+    }
 }
 
 // MARK: - Model call
 
 enum CaptureParser {
+    #if DEBUG
+    /// Screenshot fixtures: a fixed model answer, for simulators without the model.
+    nonisolated(unsafe) static var fixtureOutput: CaptureModelOutput?
+    /// How long the fixture answer takes, to show the working state.
+    nonisolated(unsafe) static var fixtureDelay: Double = 0
+    #endif
+
     /// Runs the model once with one retry on a non-safety error. Returns nil when
     /// unavailable, refused or failed; the event then saves as today (§3.4a).
     static func parse(_ message: String) async -> CaptureModelOutput? {
+        #if DEBUG
+        if let fixtureOutput {
+            try? await Task.sleep(for: .seconds(fixtureDelay))
+            return fixtureOutput
+        }
+        #endif
         guard case .available = SystemLanguageModel.default.availability else { return nil }
         let options = GenerationOptions(sampling: .greedy)
         for attempt in 0..<2 {

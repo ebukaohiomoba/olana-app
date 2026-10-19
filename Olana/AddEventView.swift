@@ -3,8 +3,8 @@
 //  Olana
 //
 //  Redesigned: bottom sheet (60 % → full), two-step flow.
-//  Step 1 — NLP text input, detected date/time chips, quick-date + time pickers.
-//  Step 2 — urgency cards with Olu suggestion, notification preview, save.
+//  Step 1 — NLP text input, detected date/time/place chips, quick-date + time pickers.
+//  Step 2 — urgency cards with Olana's suggestion, notification preview, save.
 //
 
 import SwiftUI
@@ -16,7 +16,7 @@ import AVFoundation
 struct AddEventView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: EventStore
-    @Environment(\.olanaTheme) private var theme
+    @Environment(\.homePalette) private var c
 
     @ObservedObject private var urgencyManager = UrgencyManager.shared
 
@@ -41,10 +41,11 @@ struct AddEventView: View {
     @State private var captureDraft = CaptureDraft()
     /// The title before chip words are taken out; chips come and go against it.
     @State private var captureBaseTitle = ""
+    /// The capture parse while typing, so 📍 shows next to 📅 🕐 before Next.
+    @State private var captureTask: Task<Void, Never>?
+    /// Set when the user taps Task or Event; a found place then won't switch it.
+    @State private var userChoseMode = false
     @State private var placeholderIndex = 0
-
-    // ── Olu ───────────────────────────────────────────────────────────
-    @State private var oluState: OluState = .idle
 
     // ── Pickers ───────────────────────────────────────────────────────
     @State private var showDatePicker = false
@@ -64,6 +65,13 @@ struct AddEventView: View {
     @State private var speechInitialized = false
 
     @FocusState private var isTextFieldFocused: Bool
+
+    #if DEBUG
+    /// Screenshot fixtures (`-homeFixture add…`): a message typed on appear,
+    /// and Next pressed once the capture read is in.
+    var fixtureText = ""
+    var fixtureNext = false
+    #endif
 
     enum AddEventStep { case input, review }
 
@@ -97,7 +105,7 @@ struct AddEventView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color(hex: "F5EDD8").ignoresSafeArea()
+            c.bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 stepBar
@@ -122,6 +130,15 @@ struct AddEventView: View {
             }
         }
         .onAppear { isTextFieldFocused = (currentStep == .input) }
+        #if DEBUG
+        .task {
+            guard !fixtureText.isEmpty else { return }
+            eventText = fixtureText
+            guard fixtureNext else { return }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            analyzeAndContinue()
+        }
+        #endif
         .task {
             // Rotate the example while the box is empty.
             while !Task.isCancelled {
@@ -133,10 +150,13 @@ struct AddEventView: View {
         }
         .onChange(of: captureDraft) { _, draft in
             // A chip removed or corrected: rebuild the title from the chips still on.
-            guard !captureBaseTitle.isEmpty else { return }
-            editedTitle = CaptureCode.title(captureBaseTitle,
-                                            removing: CaptureCode.chipPhrases(draft.effective, message: draft.message))
+            guard currentStep == .review, !captureBaseTitle.isEmpty else { return }
+            editedTitle = draft.title(captureBaseTitle, isTask: !isEventMode)
         }
+        // Date and time chips open these on both steps.
+        .sheet(isPresented: $showDatePicker) { datePickerSheet }
+        .sheet(isPresented: $showTimePicker) { timePickerSheet }
+        .sheet(isPresented: $showEndTimePicker) { endTimePickerSheet }
     }
 
     /// Step 6 of §3.4a, after the review step is showing: MapKit near the origin.
@@ -167,7 +187,7 @@ struct AddEventView: View {
                     Text(currentStep == .review ? "Back" : "Cancel")
                         .font(.subheadline.weight(.medium))
                 }
-                .foregroundStyle(theme.colors.ribbon)
+                .foregroundStyle(c.goldText)
             }
 
             Spacer()
@@ -184,15 +204,17 @@ struct AddEventView: View {
             if currentStep == .input {
                 Button(action: analyzeAndContinue) {
                     HStack(spacing: 4) {
-                        Text(isAnalyzing ? "…" : "Next")
-                            .font(.subheadline.weight(.medium))
-                        if !isAnalyzing {
+                        if isAnalyzing {
+                            ProgressView().controlSize(.small).tint(c.goldText)
+                        } else {
+                            Text("Next")
+                                .font(.subheadline.weight(.medium))
                             Image(systemName: "arrow.right").font(.caption.weight(.semibold))
                         }
                     }
                     .foregroundStyle(eventText.isEmpty
-                        ? theme.colors.ribbon.opacity(0.35)
-                        : theme.colors.ribbon)
+                        ? c.goldText.opacity(0.35)
+                        : c.goldText)
                 }
                 .disabled(eventText.isEmpty || isAnalyzing)
             } else {
@@ -205,7 +227,7 @@ struct AddEventView: View {
 
     private func stepSegment(filled: Bool) -> some View {
         RoundedRectangle(cornerRadius: 3)
-            .fill(filled ? theme.colors.ribbon : theme.colors.ribbon.opacity(0.25))
+            .fill(filled ? c.gold : c.gold.opacity(0.25))
             .frame(width: 56, height: 4)
     }
 
@@ -216,13 +238,9 @@ struct AddEventView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
 
-                    // Headline row — Olu Lottie + title
-                    HStack(spacing: 12) {
-                        OluView(state: $oluState, size: 46)
-                        Text("What's the plan?")
-                            .font(.system(size: 26, weight: .bold, design: .serif))
-                            .foregroundStyle(Color(hex: "1A0F00"))
-                    }
+                    Text("What's the plan?")
+                        .font(HomeType.serif(size: 30))
+                        .foregroundStyle(c.text)
 
                     // Task / Event toggle
                     taskEventToggle
@@ -231,9 +249,9 @@ struct AddEventView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top, spacing: 8) {
                             TextField(Self.placeholders[placeholderIndex], text: $eventText, axis: .vertical)
-                                .font(.system(size: 17))
-                                .foregroundStyle(Color(hex: "1A0F00"))
-                                .tint(theme.colors.ribbon)
+                                .font(.body)
+                                .foregroundStyle(c.text)
+                                .tint(c.gold)
                                 .lineLimit(2...4)
                                 .focused($isTextFieldFocused)
                                 .onChange(of: eventText) { _, v in handleTextChange(v) }
@@ -244,82 +262,42 @@ struct AddEventView: View {
                                     Circle()
                                         .fill(isRecording
                                             ? Color.red.opacity(0.12)
-                                            : theme.colors.ribbon.opacity(0.10))
+                                            : c.gold.opacity(0.10))
                                         .frame(width: 36, height: 36)
                                     Image(systemName: isRecording ? "waveform" : "mic")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundStyle(isRecording ? .red : theme.colors.ribbon)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(isRecording ? .red : c.goldText)
                                 }
                             }
                             .buttonStyle(.plain)
                         }
 
-                        // Detected date/time chips — tappable to open pickers
-                        if let date = activeDate {
-                            HStack(spacing: 8) {
-                                // Date chip
-                                Button { showDatePicker = true } label: {
-                                    tokenChip(
-                                        label: date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()),
-                                        icon: "📅"
-                                    )
+                        // What Olana read so far: 📅 🕐 🕑 from code, 📍 from the
+                        // capture parse. Tap to change, × to remove.
+                        if activeDate != nil || (isEventMode && captureDraft.placeChip != nil) {
+                            CaptureChips(draft: $captureDraft, isTask: !isEventMode, placeOnly: true,
+                                         onPlaceChanged: { _ in }) {
+                                if activeDate != nil {
+                                    dateTimeChips(includeEnd: activeEndDate != nil, clearable: true)
                                 }
-                                .buttonStyle(.plain)
-
-                                // Start time chip
-                                Button { showTimePicker = true } label: {
-                                    tokenChip(
-                                        label: date.formatted(.dateTime.hour().minute()),
-                                        icon: "🕐"
-                                    )
-                                }
-                                .buttonStyle(.plain)
-
-                                // End time chip — shown when NLP or user has set one
-                                if let endDate = activeEndDate {
-                                    Button { showEndTimePicker = true } label: {
-                                        tokenChip(
-                                            label: endDate.formatted(.dateTime.hour().minute()),
-                                            icon: "🕑"
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                // Clear all
-                                Button {
-                                    withAnimation(.spring(response: 0.25)) {
-                                        selectedDate = nil
-                                        extractedDate = nil
-                                        selectedEndDate = nil
-                                        extractedEndDate = nil
-                                    }
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(Color(hex: "A07850"))
-                                }
-                                .buttonStyle(.plain)
-
-                                Spacer()
                             }
                         }
                     }
                     .padding(16)
-                    .background(Color.white)
+                    .background(c.card)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color(hex: "E8D9C4"), lineWidth: 1)
+                            .stroke(c.line, lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+                    .shadow(color: c.cardShadow, radius: 8, x: 0, y: 3)
 
                     // Quick date
                     VStack(alignment: .leading, spacing: 10) {
                         Text("QUICK DATE")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .tracking(1.2)
-                            .foregroundStyle(Color(hex: "A07850"))
+                            .foregroundStyle(c.muted)
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -336,9 +314,9 @@ struct AddEventView: View {
                         // ── Task mode: TIME row, pixel-perfect original ──────────────
                         HStack(alignment: .center, spacing: 12) {
                             Text("TIME")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.caption.weight(.semibold))
                                 .tracking(1.2)
-                                .foregroundStyle(Color(hex: "A07850"))
+                                .foregroundStyle(c.muted)
                                 .frame(width: 40, alignment: .leading)
 
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -356,9 +334,9 @@ struct AddEventView: View {
                             // START — same quick chips, no frame constraint on label
                             HStack(alignment: .center, spacing: 12) {
                                 Text("START")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.caption.weight(.semibold))
                                     .tracking(1.2)
-                                    .foregroundStyle(Color(hex: "A07850"))
+                                    .foregroundStyle(c.muted)
                                     .fixedSize()
 
                                 ScrollView(.horizontal, showsIndicators: false) {
@@ -373,9 +351,9 @@ struct AddEventView: View {
                             // END — same chips as START row
                             HStack(alignment: .center, spacing: 12) {
                                 Text("END")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.caption.weight(.semibold))
                                     .tracking(1.2)
-                                    .foregroundStyle(Color(hex: "A07850"))
+                                    .foregroundStyle(c.muted)
                                     .fixedSize()
 
                                 ScrollView(.horizontal, showsIndicators: false) {
@@ -392,35 +370,33 @@ struct AddEventView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 100)
             }
+            // Nothing on the input step changes while the message is being read.
+            .disabled(isAnalyzing)
+            .opacity(isAnalyzing ? 0.6 : 1)
 
             // "Next — set urgency" button
             VStack(spacing: 0) {
                 Button(action: analyzeAndContinue) {
                     HStack(spacing: 10) {
-                        OluView(state: $oluState, size: 26)
-                        Text(isAnalyzing ? "Analyzing…" : "Next — set urgency")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
+                        if isAnalyzing {
+                            ProgressView().tint(c.onGold)
+                        }
+                        Text(isAnalyzing ? "Reading your event…" : "Next — set urgency")
+                            .font(.headline)
+                            .foregroundStyle(c.onGold)
+                            .contentTransition(.opacity)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(eventText.isEmpty
-                                  ? theme.colors.ribbon.opacity(0.5)
-                                  : theme.colors.ribbon)
-                    )
+                    .animation(.easeInOut(duration: 0.2), value: isAnalyzing)
+                    .frame(maxWidth: .infinity, minHeight: 54)
+                    .background(Capsule().fill(eventText.isEmpty ? c.gold.opacity(0.5) : c.gold))
                 }
                 .disabled(eventText.isEmpty || isAnalyzing)
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 20)
             }
-            .background(Color(hex: "F5EDD8"))
+            .background(c.bg)
         }
-        .sheet(isPresented: $showDatePicker) { datePickerSheet }
-        .sheet(isPresented: $showTimePicker) { timePickerSheet }
-        .sheet(isPresented: $showEndTimePicker) { endTimePickerSheet }
         .onChange(of: isEventMode) { _, newValue in
             // Only pre-fill end time when we already know the start.
             // Using Date() as a fallback produces a stale "now + 1hr" that
@@ -435,18 +411,68 @@ struct AddEventView: View {
 
     // MARK: - NLP Token Chip
 
+    /// 📅 🕐 🕑, each opening its picker. Shared by both steps. On step 1 the
+    /// 📅 chip's × clears the date and both times.
+    @ViewBuilder
+    private func dateTimeChips(includeEnd: Bool, clearable: Bool = false) -> some View {
+        let dateLabel = finalDateForSave.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        if clearable {
+            HStack(spacing: 5) {
+                Button { showDatePicker = true } label: {
+                    HStack(spacing: 5) {
+                        Text("📅").font(.footnote)
+                        Text(dateLabel).font(.footnote.weight(.semibold)).foregroundStyle(c.text)
+                    }
+                }
+                .buttonStyle(.plain)
+                Button {
+                    withAnimation(.spring(response: 0.25)) {
+                        selectedDate = nil
+                        extractedDate = nil
+                        selectedEndDate = nil
+                        extractedEndDate = nil
+                    }
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(c.muted)
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear date and time")
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 4)
+            .padding(.vertical, 4)
+            .background(c.gold.opacity(0.15))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(c.gold.opacity(0.3), lineWidth: 1))
+        } else {
+            Button { showDatePicker = true } label: { tokenChip(label: dateLabel, icon: "📅") }
+                .buttonStyle(.plain)
+        }
+        Button { showTimePicker = true } label: {
+            tokenChip(label: finalDateForSave.formatted(.dateTime.hour().minute()), icon: "🕐")
+        }
+        .buttonStyle(.plain)
+        if includeEnd {
+            Button { showEndTimePicker = true } label: {
+                tokenChip(label: finalEndDateForSave.formatted(.dateTime.hour().minute()), icon: "🕑")
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func tokenChip(label: String, icon: String) -> some View {
         HStack(spacing: 5) {
-            Text(icon).font(.system(size: 13))
+            Text(icon).font(.footnote)
             Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color(hex: "1A0F00"))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(c.text)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(theme.colors.ribbon.opacity(0.15))
+        .background(c.gold.opacity(0.15))
         .clipShape(Capsule())
-        .overlay(Capsule().stroke(theme.colors.ribbon.opacity(0.3), lineWidth: 1))
+        .overlay(Capsule().stroke(c.gold.opacity(0.3), lineWidth: 1))
     }
 
     // MARK: - Quick Date Card
@@ -464,27 +490,26 @@ struct AddEventView: View {
         } label: {
             VStack(spacing: 4) {
                 Text(item.label)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .tracking(0.5)
-                    .foregroundStyle(isSelected ? .white : Color(hex: "A07850"))
+                    .foregroundStyle(isSelected ? c.onGold : c.muted)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
                 Text("\(dayNum)")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(isSelected ? .white : Color(hex: "1A0F00"))
+                    .font(.title2.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(isSelected ? c.onGold : c.text)
 
                 Text(weekday)
-                    .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? .white.opacity(0.8) : Color(hex: "A07850"))
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? c.onGold.opacity(0.8) : c.muted)
             }
             .frame(width: 72, height: 84)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isSelected ? theme.colors.ribbon : Color.white)
+                    .fill(isSelected ? c.gold : c.card)
             )
-            .shadow(color: Color.black.opacity(isSelected ? 0.12 : 0.04),
-                    radius: isSelected ? 6 : 4, x: 0, y: 2)
+            .shadow(color: c.cardShadow, radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -500,14 +525,14 @@ struct AddEventView: View {
             withAnimation(.spring(response: 0.25)) { selectedDate = newDate }
         } label: {
             Text(item.label)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isSelected ? .white : Color(hex: "1A0F00"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? c.onGold : c.text)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
                 .background(
-                    Capsule().fill(isSelected ? theme.colors.ribbon : Color.white)
+                    Capsule().fill(isSelected ? c.gold : c.card)
                 )
-                .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+                .shadow(color: c.cardShadow, radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -524,12 +549,12 @@ struct AddEventView: View {
             withAnimation(.spring(response: 0.25)) { selectedEndDate = newDate }
         } label: {
             Text(item.label)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isSelected ? .white : Color(hex: "1A0F00"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? c.onGold : c.text)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
-                .background(Capsule().fill(isSelected ? theme.colors.ribbon : Color.white))
-                .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+                .background(Capsule().fill(isSelected ? c.gold : c.card))
+                .shadow(color: c.cardShadow, radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -539,14 +564,16 @@ struct AddEventView: View {
     private var taskEventToggle: some View {
         HStack(spacing: 0) {
             toggleSegment(label: "Task", icon: "checkmark.circle", isSelected: !isEventMode) {
+                userChoseMode = true
                 withAnimation(.spring(response: 0.25)) { isEventMode = false }
             }
             toggleSegment(label: "Event", icon: "calendar", isSelected: isEventMode) {
+                userChoseMode = true
                 withAnimation(.spring(response: 0.25)) { isEventMode = true }
             }
         }
         .padding(3)
-        .background(Color(hex: "EDE0C8"))
+        .background(c.card2)
         .clipShape(Capsule())
     }
 
@@ -554,16 +581,16 @@ struct AddEventView: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.footnote.weight(.medium))
                 Text(label)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
             }
-            .foregroundStyle(isSelected ? Color(hex: "1A0F00") : Color(hex: "A07850"))
+            .foregroundStyle(isSelected ? c.text : c.muted)
             .padding(.vertical, 8)
             .padding(.horizontal, 20)
             .background(
                 Capsule()
-                    .fill(isSelected ? Color.white : Color.clear)
+                    .fill(isSelected ? c.card : Color.clear)
                     .shadow(color: .black.opacity(isSelected ? 0.07 : 0), radius: 4, x: 0, y: 2)
             )
         }
@@ -583,14 +610,14 @@ struct AddEventView: View {
                 displayedComponents: .date
             )
             .datePickerStyle(.graphical)
-            .tint(theme.colors.ribbon)
+            .tint(c.gold)
             .padding()
             .navigationTitle("Pick a date")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showDatePicker = false }
-                        .foregroundStyle(theme.colors.ribbon)
+                        .foregroundStyle(c.goldText)
                 }
             }
         }
@@ -608,7 +635,7 @@ struct AddEventView: View {
                 displayedComponents: .hourAndMinute
             )
             .datePickerStyle(.wheel)
-            .tint(theme.colors.ribbon)
+            .tint(c.gold)
             .labelsHidden()
             .padding()
             .navigationTitle("Pick a time")
@@ -616,7 +643,7 @@ struct AddEventView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showTimePicker = false }
-                        .foregroundStyle(theme.colors.ribbon)
+                        .foregroundStyle(c.goldText)
                 }
             }
         }
@@ -634,7 +661,7 @@ struct AddEventView: View {
                 displayedComponents: .hourAndMinute
             )
             .datePickerStyle(.wheel)
-            .tint(theme.colors.ribbon)
+            .tint(c.gold)
             .labelsHidden()
             .padding()
             .navigationTitle("Pick end time")
@@ -642,7 +669,7 @@ struct AddEventView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showEndTimePicker = false }
-                        .foregroundStyle(theme.colors.ribbon)
+                        .foregroundStyle(c.goldText)
                 }
             }
         }
@@ -659,8 +686,8 @@ struct AddEventView: View {
                     // Event summary card
                     summaryCard
 
-                    // Olu suggestion — full-width card, no character to the left
-                    oluSuggestionCard
+                    // Olana's suggestion — full-width card
+                    suggestionCard
 
                     // 3 urgency option cards
                     urgencyGridCards
@@ -675,24 +702,17 @@ struct AddEventView: View {
             // "Done — add it" button
             VStack(spacing: 0) {
                 Button(action: saveEvent) {
-                    HStack(spacing: 10) {
-                        OluView(state: $oluState, size: 26)
-                        Text("Done — add it")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(theme.colors.ribbon)
-                    )
+                    Text("Done — add it")
+                        .font(.headline)
+                        .foregroundStyle(c.onGold)
+                    .frame(maxWidth: .infinity, minHeight: 54)
+                    .background(Capsule().fill(c.gold))
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 20)
             }
-            .background(Color(hex: "F5EDD8"))
+            .background(c.bg)
         }
     }
 
@@ -701,105 +721,70 @@ struct AddEventView: View {
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(editedTitle.isEmpty ? "Event" : editedTitle)
-                .font(.system(size: 19, weight: .bold))
-                .foregroundStyle(Color(hex: "1A0F00"))
+                .font(HomeType.serif(size: 24))
+                .foregroundStyle(c.text)
 
-            HStack(spacing: 8) {
-                Label(
-                    finalDateForSave.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()),
-                    systemImage: "calendar"
-                )
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color(hex: "3B1F0A"))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color(hex: "F5EDD8"))
-                .clipShape(Capsule())
-
-                Label(
-                    finalDateForSave.formatted(.dateTime.hour().minute()),
-                    systemImage: "clock"
-                )
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color(hex: "3B1F0A"))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color(hex: "F5EDD8"))
-                .clipShape(Capsule())
-
-                if isEventMode {
-                    Label(
-                        finalEndDateForSave.formatted(.dateTime.hour().minute()),
-                        systemImage: "arrow.right"
-                    )
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color(hex: "3B1F0A"))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(hex: "F5EDD8"))
-                    .clipShape(Capsule())
-                }
+            // One row: when, then what Olana understood besides the time (PRD v6 §1.7a).
+            CaptureChips(draft: $captureDraft, isTask: !isEventMode, onPlaceChanged: resolvePlace) {
+                dateTimeChips(includeEnd: isEventMode)
             }
-
-            // What Olana understood besides the time (PRD v6 §1.7a).
-            CaptureChips(draft: $captureDraft, isTask: !isEventMode, onPlaceChanged: resolvePlace)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color.white)
+        .background(c.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color(hex: "E8D9C4"), lineWidth: 1)
+                .stroke(c.line, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+        .shadow(color: c.cardShadow, radius: 8, x: 0, y: 3)
     }
 
-    // MARK: - Olu Suggestion Card (full width — no character beside it)
+    // MARK: - Suggestion Card
 
-    private var oluSuggestionCard: some View {
+    private var suggestionCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("OLU SUGGESTS")
-                .font(.system(size: 10, weight: .semibold))
+            Text("OLANA SUGGESTS")
+                .font(.caption2.weight(.semibold))
                 .tracking(1.5)
-                .foregroundStyle(Color(hex: "A07850"))
+                .foregroundStyle(c.muted)
 
             if mlClassification == nil {
                 // No judgement to show. Say so rather than presenting the default
-                // selection below as if Olu had chosen it.
+                // selection below as if Olana had chosen it.
                 Text("Pick one below")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(Color(hex: "1A0F00"))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(c.text)
 
                 Text(AIAssistant.shared.unavailableMessage
-                     ?? "Olu couldn't tell how urgent this is from the title.")
-                    .font(.system(size: 14))
+                     ?? "Olana couldn't tell how urgent this is from the title.")
+                    .font(.subheadline)
                     .italic()
-                    .foregroundStyle(Color(hex: "A07850"))
+                    .foregroundStyle(c.muted)
                     .lineSpacing(3)
             } else {
                 Text(friendlyUrgencyName(for: mlUrgency))
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(Color(hex: "1A0F00"))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(c.text)
             }
 
             if let rationale = mlClassification?.rationale {
                 Text(rationale)
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .italic()
-                    .foregroundStyle(Color(hex: "A07850"))
+                    .foregroundStyle(c.muted)
                     .lineSpacing(3)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color.white)
+        .background(c.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color(hex: "E8D9C4"), lineWidth: 1)
+                .stroke(c.line, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+        .shadow(color: c.cardShadow, radius: 8, x: 0, y: 3)
     }
 
     // MARK: - 3 Urgency Cards (grid row)
@@ -822,11 +807,11 @@ struct AddEventView: View {
                     .fill(urgencyDotColor(for: urgency))
                     .frame(width: 20, height: 20)
                 Text(friendlyUrgencyName(for: urgency))
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(isSelected ? .white : Color(hex: "1A0F00"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(c.text)
                 Text(urgencySubtitle(for: urgency))
-                    .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? .white.opacity(0.8) : Color(hex: "A07850"))
+                    .font(.caption)
+                    .foregroundStyle(c.muted)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -835,16 +820,17 @@ struct AddEventView: View {
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isSelected ? theme.colors.ribbon : Color.white)
+                    .fill(isSelected ? c.card2 : c.card)
             )
+            // Selected is a gold outline, not a fill, so the tier dot keeps its color.
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isSelected ? Color.clear : Color(hex: "E8D9C4"), lineWidth: 1)
+                    .stroke(isSelected ? c.gold : c.line, lineWidth: isSelected ? 2 : 1)
             )
-            .shadow(color: Color.black.opacity(isSelected ? 0.10 : 0.04),
-                    radius: isSelected ? 6 : 4, x: 0, y: 2)
+            .shadow(color: c.cardShadow, radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Selected Urgency Detail Card
@@ -859,32 +845,32 @@ struct AddEventView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(friendlyUrgencyName(for: resolvedUrgency))
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color(hex: "1A0F00"))
+                        .font(.headline)
+                        .foregroundStyle(c.text)
                     Spacer()
                     Text("SELECTED")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.caption2.weight(.semibold))
                         .tracking(1.0)
-                        .foregroundStyle(theme.colors.ribbon)
+                        .foregroundStyle(c.goldText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(theme.colors.ribbon.opacity(0.12))
+                        .background(c.gold.opacity(0.12))
                         .clipShape(Capsule())
                 }
                 Text(notificationDescription(for: resolvedUrgency))
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color(hex: "5C3D1E"))
+                    .font(.subheadline)
+                    .foregroundStyle(c.muted)
                     .lineSpacing(3)
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(c.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color(hex: "E8D9C4"), lineWidth: 1)
+                .stroke(c.line, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+        .shadow(color: c.cardShadow, radius: 8, x: 0, y: 3)
     }
 
     // MARK: - Helpers
@@ -929,14 +915,8 @@ struct AddEventView: View {
         }
     }
 
-    /// Dot colors match the screenshot (red / yellow / blue)
-    private func urgencyDotColor(for urgency: EventUrgency) -> Color {
-        switch urgency {
-        case .high:   return Color(red: 0.80, green: 0.22, blue: 0.22)
-        case .medium: return Color(red: 0.94, green: 0.78, blue: 0.17)
-        case .low:    return Color(red: 0.32, green: 0.54, blue: 0.84)
-        }
-    }
+    /// The home tier colors, so "Critical" here matches the card's dot.
+    private func urgencyDotColor(for urgency: EventUrgency) -> Color { c.tier(urgency) }
 
     private func friendlyUrgencyName(for urgency: EventUrgency) -> String {
         switch urgency {
@@ -957,17 +937,18 @@ struct AddEventView: View {
     private func notificationDescription(for urgency: EventUrgency) -> String {
         switch urgency {
         case .high:
-            return "Olu will remind you repeatedly throughout the day. You'll get alerts at key intervals so nothing slips."
+            return "Olana will remind you repeatedly throughout the day. You'll get alerts at key intervals so nothing slips."
         case .medium:
-            return "Olu will remind you once in the morning and once in the afternoon. No notifications at night. You can change this anytime from the task."
+            return "Olana will remind you once in the morning and once in the afternoon. No notifications at night. You can change this anytime from the task."
         case .low:
-            return "Olu will send a gentle reminder a day before. No recurring alerts — it'll show up when it matters."
+            return "Olana will send a gentle reminder a day before. No recurring alerts — it'll show up when it matters."
         }
     }
 
     // MARK: - NLP Analysis
 
     private func handleTextChange(_ newValue: String) {
+        scheduleCapture(newValue)
         analysisTask?.cancel()
         guard newValue.count > 3 else { return }
         analysisTask = Task {
@@ -986,6 +967,41 @@ struct AddEventView: View {
         }
     }
 
+    /// The capture parse once typing pauses (on-device, so no cost). A newer
+    /// message cancels an older run; Next reuses the result for the same text.
+    private func scheduleCapture(_ text: String) {
+        captureTask?.cancel()
+        guard text.count > 3 else {
+            captureDraft = CaptureDraft()
+            return
+        }
+        captureTask = Task {
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            let result = await CaptureParser.run(message: text, title: extractTitle(from: text))
+            await MainActor.run {
+                guard !Task.isCancelled, text == eventText, currentStep == .input else { return }
+                withAnimation(.spring(response: 0.25)) { applyCapture(captureDraft.reparsed(result, message: text)) }
+            }
+        }
+    }
+
+    /// Takes a capture read, switching to Event when it found a place or link,
+    /// the way an end time does, unless the user picked Task themselves.
+    private func applyCapture(_ draft: CaptureDraft) {
+        captureDraft = draft
+        if draft.impliesEvent && !userChoseMode { isEventMode = true }
+    }
+
+    /// The capture for `text`: the live read when it's for the same text, so
+    /// chip changes made while typing carry over.
+    private func capture(for text: String, title: String) async -> CaptureDraft {
+        let current = await MainActor.run { captureDraft }
+        if current.message == text { return current }
+        let result = await CaptureParser.run(message: text, title: title)
+        return current.reparsed(result, message: text)
+    }
+
     private func analyzeAndContinue() {
         guard !eventText.isEmpty else { return }
         isAnalyzing = true
@@ -996,9 +1012,10 @@ struct AddEventView: View {
             let dateHint = selectedDate ?? extractedDate
             // Capture parse runs alongside urgency, not inside it (§3.4a).
             let baseTitle = extractTitle(from: text)
-            async let captured = CaptureParser.run(message: text, title: baseTitle)
+            captureTask?.cancel()
+            async let captured = capture(for: text, title: baseTitle)
             let classification = await UrgencyManager.shared.classify(text: text, date: dateHint)
-            let capture = await captured
+            let draft = await captured
 
             if selectedDate == nil || (selectedEndDate == nil && extractedEndDate == nil) {
                 let (start, end) = await extractDateRangeFromText(text)
@@ -1013,15 +1030,12 @@ struct AddEventView: View {
             if recurrence != .none && selectedRecurrence == .none {
                 selectedRecurrence = recurrence
             }
-            let draft = CaptureDraft(result: capture, message: text)
-            let title = CaptureCode.title(baseTitle, removing: CaptureCode.chipPhrases(draft.effective, message: text))
-
             await MainActor.run {
                 mlClassification = classification
                 captureBaseTitle = baseTitle
-                captureDraft     = draft
-                editedTitle      = title
-                if let place = capture.placeText { resolvePlace(place) }
+                applyCapture(draft)
+                editedTitle      = draft.title(baseTitle, isTask: !isEventMode)
+                if let place = draft.effective.placeText, draft.match == nil, draft.picked == nil { resolvePlace(place) }
                 isAnalyzing      = false
                 withAnimation(.spring(response: 0.35)) { currentStep = .review }
             }
@@ -1053,9 +1067,8 @@ struct AddEventView: View {
             )
         }
 
-        oluState = .celebrate
         UINotificationFeedbackGenerator().notificationOccurred(.success)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { dismiss() }
+        dismiss()
     }
 
     // MARK: - Date / Range Extraction

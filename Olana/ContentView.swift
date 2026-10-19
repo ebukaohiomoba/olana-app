@@ -44,6 +44,7 @@ struct ContentView: View {
         .sheet(isPresented: $showingAdd) {
             AddEventView()
                 .environmentObject(store)
+                .homePalette()
                 .presentationDetents([.fraction(0.75), .large])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(24)

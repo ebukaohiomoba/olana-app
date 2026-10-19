@@ -148,6 +148,19 @@ struct HomeFixtureScreen: View {
         } else if which == "onboarding" || which == "onboarding-calendar" {
             // `-homeFixture onboarding` (promise) or `onboarding-calendar`.
             OnboardingView(start: which == "onboarding" ? .promise : .calendar) {}.homePalette()
+        } else if which.hasPrefix("add") {
+            // `-homeFixture add` (typing, place chip), `add-task` (no end time),
+            // `add-review` (after Next), `add-analyzing` (Next, still reading): a fixed message.
+            AddEventView(fixtureText: which == "add" ? "Dentist tomorrow 3pm to 4pm at Smile Dental, bring insurance card"
+                                                     : "Dentist tomorrow 3pm at Smile Dental, bring insurance card",
+                         fixtureNext: which == "add-review" || which == "add-analyzing")
+                .environmentObject(store)
+                .homePalette()
+                .onAppear {
+                    CaptureParser.fixtureOutput = CaptureModelOutput(placeText: "at Smile Dental", prepItems: ["bring insurance card"],
+                                                                     attendance: .inPerson, likelyNeedsTravel: true)
+                    CaptureParser.fixtureDelay = which == "add-analyzing" ? 30 : 0
+                }
         } else if which.hasPrefix("spikes-") {
             // `-spikes open` or `-spikes autorun`: the Spikes screen, no login.
             NavigationStack { SpikesView(autorun: which == "spikes-autorun") }

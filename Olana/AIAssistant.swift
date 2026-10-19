@@ -226,16 +226,16 @@ final class AIAssistant: ObservableObject {
         }
     }
 
-    /// Short, user-facing reason Olu cannot suggest urgency, or nil when it can.
+    /// Short, user-facing reason Olana cannot suggest urgency, or nil when it can.
     var unavailableMessage: String? {
         guard case .unavailable(let reason) = state else { return nil }
         switch reason {
         case "appleIntelligenceNotEnabled":
-            return "Turn on Apple Intelligence in Settings for Olu's suggestions."
+            return "Turn on Apple Intelligence in Settings for Olana's suggestions."
         case "modelNotReady":
-            return "Apple Intelligence is still getting ready. Olu's suggestions will start soon."
+            return "Apple Intelligence is still getting ready. Olana's suggestions will start soon."
         default:
-            return "Olu's suggestions need a device with Apple Intelligence."
+            return "Olana's suggestions need a device with Apple Intelligence."
         }
     }
 

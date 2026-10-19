@@ -227,5 +227,40 @@ check("draft: tasks never ask", !CaptureDraft(result: noPlace).asksWhere(isTask:
 check("draft: virtual never asks", !CaptureDraft(result: rz).asksWhere(isTask: false))
 check("draft: a place already given never asks", !CaptureDraft(result: r1).asksWhere(isTask: false))
 
+// MARK: Live chips on step 1, and what the review step reads back
+
+check("a place makes it an event", CaptureDraft(result: r1, message: m1).impliesEvent)
+check("a meeting link makes it an event", CaptureDraft(result: rz, message: zoomMsg).impliesEvent)
+check("no place and no link stays as it is", !CaptureDraft(result: noPlace).impliesEvent)
+var placeGone = CaptureDraft(result: r1, message: m1)
+placeGone.removed.insert(.place)
+check("a removed place doesn't make it an event", !placeGone.impliesEvent)
+
+var edited = CaptureDraft(result: r1, match: .resolved(dental), message: m1)
+edited.removed.insert(.bring("Insurance card"))
+let again = edited.reparsed(r1, message: m1 + " ")
+check("re-read: the same place keeps its match", again.match == .resolved(dental))
+check("re-read: a removed item stays removed", again.removed.contains(.bring("Insurance card")))
+var newPlace = r1
+newPlace.placeText = "Bright Smiles"
+let moved = edited.reparsed(newPlace, message: "dentist at Bright Smiles")
+check("re-read: a new place drops the old match", moved.match == nil && moved.picked == nil)
+var droppedPlace = CaptureDraft(result: r1, message: m1)
+droppedPlace.removed.insert(.place)
+check("re-read: a new place isn't removed", !droppedPlace.reparsed(newPlace, message: "x").removed.contains(.place))
+
+let base1 = "Dentist at Smile Dental, bring insurance card, be there 10 min early"
+let d1 = CaptureDraft(result: r1, message: m1)
+check("title: an event loses the place words", d1.title(base1, isTask: false) == "Dentist", d1.title(base1, isTask: false))
+check("title: a task keeps the place words", d1.title(base1, isTask: true).contains("Smile Dental"), d1.title(base1, isTask: true))
+
+check("chip: just the words before MapKit", CaptureDraft(result: r1, message: m1).placeChip?.label == "Smile Dental")
+let found = CaptureDraft(result: r1, match: .resolved(dental), message: m1).placeChip
+check("chip: MapKit's name and address when found", found?.label == "Smile Dental" && found?.detail == "1 Main St" && found?.found == true)
+let lost = CaptureDraft(result: r1, match: PlaceMatch.none, message: m1).placeChip
+check("chip: says not found", lost?.detail == "not found" && lost?.found == false)
+check("chip: asks which one", CaptureDraft(result: r1, match: .choose([dental, dental]), message: m1).placeChip?.label == "Which Smile Dental?")
+check("chip: none when removed", placeGone.placeChip == nil)
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

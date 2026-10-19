@@ -2,9 +2,10 @@
 //  CaptureChips.swift
 //  Olana
 //
-//  The read-back on the add flow's review step (PRD v6 §1.7a): what Olana
-//  understood from the message, as chips in the row under 📅 🕐 🕑.
+//  The read-back on the add flow (PRD v6 §1.7a): what Olana understood from the
+//  message, as chips in one row after 📅 🕐 🕑 (passed in as `leading`).
 //  `📍 Smile Dental` · `🔗 Zoom` · `🎒 Insurance card` · `✓ Review the deck` · `⏱ 15 min early`
+//  While typing (`placeOnly`), the row shows just 📍 next to the date and time.
 //
 //  Tap a chip to correct it in words ("the one on 5th", "online", "also bring my
 //  ID"), parsed the same way; × removes it and its words go back in the title.
@@ -13,11 +14,17 @@
 
 import SwiftUI
 
-struct CaptureChips: View {
+struct CaptureChips<Leading: View>: View {
     @Binding var draft: CaptureDraft
     let isTask: Bool
+    /// Step 1: only the 📍 chip, no "Where is it?" line.
+    var placeOnly = false
     /// Called after a correction changes the place, so the parent can re-resolve.
     var onPlaceChanged: (String) -> Void
+    /// Chips that come first in the same row (📅 🕐 🕑).
+    @ViewBuilder var leading: () -> Leading
+
+    @Environment(\.homePalette) private var c
 
     @State private var editing: CaptureChipID?
     @State private var editText = ""
@@ -25,15 +32,15 @@ struct CaptureChips: View {
     @State private var choosing = false
     @State private var working = false
 
-    private let ink = Color(hex: "1A0F00"), muted = Color(hex: "A07850")
-
     var body: some View {
         let e = draft.effective
         VStack(alignment: .leading, spacing: 8) {
             FlowRow(spacing: 8) {
-                if !isTask, let place = e.placeText {
-                    chip(.place, icon: "📍", label: placeLabel(place))
+                leading()
+                if !isTask, let place = draft.placeChip {
+                    chip(.place, icon: "📍", label: place.label, detail: place.detail, dimmed: place.found == false)
                 }
+                if !placeOnly {
                 if let service = e.meetingService {
                     chip(.link, icon: "🔗", label: service.name)
                 } else if e.meetingURL != nil {
@@ -44,21 +51,22 @@ struct CaptureChips: View {
                 if !isTask, let m = e.arriveEarlyMinutes, m > 0 {
                     chip(.early, icon: "⏱", label: "\(m) min early")
                 }
+                }
             }
 
-            if draft.asksWhere(isTask: isTask) {
+            if !placeOnly, draft.asksWhere(isTask: isTask) {
                 HStack(spacing: 8) {
-                    Image(systemName: "mappin.and.ellipse").foregroundStyle(muted).font(.system(size: 13))
+                    Image(systemName: "mappin.and.ellipse").foregroundStyle(c.muted).font(.footnote)
                     TextField("Where is it? (optional)", text: $whereText)
-                        .font(.system(size: 14))
-                        .foregroundStyle(ink)
+                        .font(.subheadline)
+                        .foregroundStyle(c.text)
                         .submitLabel(.done)
                         .onSubmit { Task { await applyWhere() } }
                     if working { ProgressView().controlSize(.small) }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color(hex: "F5EDD8"))
+                .background(c.card2)
                 .clipShape(Capsule())
                 .accessibilityHint("Type or say where it is. Optional.")
             }
@@ -80,28 +88,29 @@ struct CaptureChips: View {
 
     // MARK: Chips
 
-    private func placeLabel(_ words: String) -> String {
-        if let picked = draft.picked { return picked.name }
-        if case .choose? = draft.match { return "Which \(words)?" }
-        return words
-    }
-
-    private func chip(_ id: CaptureChipID, icon: String, label: String) -> some View {
+    private func chip(_ id: CaptureChipID, icon: String, label: String,
+                      detail: String? = nil, dimmed: Bool = false) -> some View {
         HStack(spacing: 5) {
             Button {
                 if id == .place, case .choose? = draft.match, draft.picked == nil { choosing = true }
                 else { editText = ""; editing = id }
             } label: {
                 HStack(spacing: 5) {
-                    Text(icon).font(.system(size: 13))
-                    Text(label).font(.system(size: 13, weight: .semibold)).foregroundStyle(ink).lineLimit(1)
+                    Text(icon).font(.footnote)
+                    Text(label).font(.footnote.weight(.semibold)).foregroundStyle(dimmed ? c.muted : c.text)
+                        .lineLimit(1).frame(maxWidth: 180, alignment: .leading)
+                    if let detail {
+                        Text(detail).font(.caption).foregroundStyle(c.muted)
+                            .lineLimit(1).frame(maxWidth: 120, alignment: .leading)
+                    }
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel([label, detail].compactMap { $0 }.joined(separator: ", "))
             Button {
                 withAnimation(.spring(response: 0.25)) { _ = draft.removed.insert(id) }
             } label: {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(muted)
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(c.muted)
                     .frame(width: 22, height: 22).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -110,9 +119,9 @@ struct CaptureChips: View {
         .padding(.leading, 12)
         .padding(.trailing, 4)
         .padding(.vertical, 4)
-        .background(Color(hex: "D4A853").opacity(0.15))
+        .background(c.gold.opacity(dimmed ? 0.06 : 0.15))
         .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color(hex: "D4A853").opacity(0.3), lineWidth: 1))
+        .overlay(Capsule().stroke(c.gold.opacity(0.3), lineWidth: 1))
         .accessibilityElement(children: .contain)
     }
 
@@ -192,6 +201,12 @@ struct CaptureChips: View {
             draft.match = nil
             onPlaceChanged(words)
         }
+    }
+}
+
+extension CaptureChips where Leading == EmptyView {
+    init(draft: Binding<CaptureDraft>, isTask: Bool, placeOnly: Bool = false, onPlaceChanged: @escaping (String) -> Void) {
+        self.init(draft: draft, isTask: isTask, placeOnly: placeOnly, onPlaceChanged: onPlaceChanged) { EmptyView() }
     }
 }
 
