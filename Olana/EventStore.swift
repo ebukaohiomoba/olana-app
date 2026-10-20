@@ -184,7 +184,7 @@ final class EventStore: ObservableObject {
                   semantics: EventSemantics? = nil,
                   userPickedUrgency: Bool = false,
                   capture: CaptureResult? = nil, message: String? = nil,
-                  place: ResolvedPlace? = nil) {
+                  place: ResolvedPlace? = nil, assistMode: AssistMode? = nil) {
         let new = OlanaEvent(title: title, start: start, end: end, urgency: urgency, recurrenceRule: recurrenceRule, isTask: isTask)
         // What the message said besides the time (PRD v6 §3.11). Tasks never
         // take a place or travel (§1.7a).
@@ -215,6 +215,9 @@ final class EventStore: ObservableObject {
             }
         }
         saveAndRefresh()
+        // "Is this important?" answered while adding: the same series override
+        // the card and sheet set (PRD v3 §1.6).
+        if let assistMode { updateOverride(for: new, scope: .series) { $0.assistMode = assistMode } }
         Task { await NotificationEngine.shared.scheduleNotifications(for: new) }
         let wordCount = title.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
         OlanaAnalytics.eventCreated(urgency: urgency, recurrenceRule: recurrenceRule, titleWordCount: wordCount)

@@ -82,11 +82,13 @@ struct OlanaApp: App {
         if !hasCompletedOnboarding {
             OnboardingView {
                 onboardedAt = Date().timeIntervalSince1970
-                hasCompletedOnboarding = true
+                withAnimation(.easeInOut(duration: 0.45)) { hasCompletedOnboarding = true }
             }
             .homePalette()
+            .transition(.opacity)
         } else {
             ContentView()
+                .transition(.opacity.combined(with: .scale(scale: 1.02)))
         }
     }
 

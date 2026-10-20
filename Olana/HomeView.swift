@@ -56,19 +56,27 @@ struct HomeView: View {
     @State private var nudgedIDs: Set<String> = []
     @State private var nudgeBannerText: String?
     @State private var nudgeDismissTimer: Timer?
+    /// A day picked in the week ribbon; nil is today. Back to today whenever
+    /// the app goes to the background.
+    @State private var pickedDay: Date?
 
     var body: some View {
         NavigationStack {
             TimelineView(.everyMinute) { context in
                 let _ = actionTick
-                let day = buildDay(now: context.date)
+                let day = buildDay(now: context.date, picked: pickedDay)
                 ScrollView {
                     HomeScreenContent(day: day,
-                                      syncText: syncText(now: context.date, alwaysShow: day.isOpen),
+                                      syncText: syncText(now: context.date, alwaysShow: day.isOpen && day.isToday),
                                       onSelect: { open($0) },
                                       onAction: { act($0, $1, $2) },
                                       onToggleDone: { toggleDone($0) },
-                                      onDelete: { handleDeleteIntent(id: $0, isRecurring: $1) })
+                                      onDelete: { handleDeleteIntent(id: $0, isRecurring: $1) },
+                                      onPickDay: { d in
+                                          withAnimation(.snappy) {
+                                              pickedDay = Calendar.current.isDateInToday(d) ? nil : d
+                                          }
+                                      })
                 }
                 .scrollIndicators(.hidden)
                 #if DEBUG
@@ -109,6 +117,7 @@ struct HomeView: View {
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .background { pickedDay = nil }
                 switch newPhase {
                 case .active:
                     guard isViewVisible else { return }
@@ -218,17 +227,26 @@ struct HomeView: View {
 
     // MARK: - Day
 
-    private func buildDay(now: Date) -> HomeDay {
+    private func buildDay(now: Date, picked: Date? = nil) -> HomeDay {
         let cal = Calendar.current
         // Today's events for the rail, plus anything still ahead for the card,
         // which picks by earliest actionable moment wherever it falls.
         let inputs = store.events
             .filter { cal.isDate($0.start, inSameDayAs: now) || ($0.end > now && !$0.completed) }
             .map { input($0, now: now) }
+        if let picked, !cal.isDate(picked, inSameDayAs: now) {
+            return HomeDayBuilder.build(inputs: inputs, day: picked, now: now, calendar: cal)
+        }
         return HomeDayBuilder.build(inputs: inputs, now: now, bed: bedTime(now: now))
     }
 
     private func input(_ e: OlanaEvent, now: Date) -> HomeDayBuilder.Input {
+        Self.input(e, now: now, store: store)
+    }
+
+    /// One event as the home builder sees it. Static so onboarding's reveal
+    /// ranks events exactly as home will.
+    static func input(_ e: OlanaEvent, now: Date, store: EventStore) -> HomeDayBuilder.Input {
         let sem = e.cachedSemantics
         let prep = sem?.effectivePrep.hours ?? 0
         let ov = store.effectiveOverrides(for: e)
@@ -506,20 +524,41 @@ struct HomeScreenContent: View {
     var onAction: (UUID, CardAction, String?) -> Void = { _, _, _ in }
     var onToggleDone: (UUID) -> Void = { _ in }
     var onDelete: (UUID, Bool) -> Void = { _, _ in }
+    var onPickDay: (Date) -> Void = { _ in }
 
     @Environment(\.homePalette) private var c
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            dateLabel
-                .padding(.top, 6)
-                .padding(.bottom, 16)
-
-            if day.isOpen {
-                OpenDayView(day: day, onSelect: onSelect)
+            if day.week.isEmpty {
+                dateLabel
+                    .padding(.top, 6)
+                    .padding(.bottom, 16)
             } else {
-                if let card = day.card {
+                // The week ribbon stands in for today's date line.
+                WeekRibbonView(days: day.week, selected: Calendar.current.startOfDay(for: day.now), onPick: onPickDay)
+                    .padding(.top, 2)
+                    .padding(.bottom, 14)
+                    .padding(.horizontal, -4)
+            }
+
+            if !day.isToday {
+                otherDayHeader
+                    .padding(.bottom, 4)
+                if day.isOpen {
+                    Text("Nothing planned.")
+                        .font(.subheadline)
+                        .foregroundStyle(c.muted)
+                        .padding(.top, 12)
+                } else {
+                    DayRailView(day: day, onSelect: onSelect,
+                                onToggleDone: onToggleDone, onDelete: onDelete)
+                }
+            } else if day.isOpen {
+                OpenDayView(day: day, onSelect: onSelect, onAction: onAction)
+            } else {
+                if let card = day.card ?? day.upNext {
                     NextCardView(card: card, onTap: { onSelect(card.eventID) },
                                  onAction: { onAction(card.eventID, $0, $1) })
                         .padding(.bottom, 16)
@@ -540,6 +579,31 @@ struct HomeScreenContent: View {
         }
         .padding(.horizontal, 22)
         .padding(.bottom, 24)
+    }
+
+    /// "Tomorrow  Tuesday, Oct 20        Today"
+    private var otherDayHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(HomeFormat.dayName(day.now, now: Date()).capitalizedFirst)
+                .font(.headline)
+                .foregroundStyle(c.text)
+            Text(day.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                .font(.subheadline)
+                .foregroundStyle(c.muted)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button { onPickDay(Date()) } label: {
+                Text("Today")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(c.goldText)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(c.gold.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows today")
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var dateLabel: some View {
@@ -567,6 +631,7 @@ struct HomeScreenContent: View {
 private struct OpenDayView: View {
     let day: HomeDay
     var onSelect: (UUID) -> Void
+    var onAction: (UUID, CardAction, String?) -> Void = { _, _, _ in }
 
     @Environment(\.homePalette) private var c
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -587,7 +652,12 @@ private struct OpenDayView: View {
                 .foregroundStyle(c.muted)
                 .padding(.top, 10)
 
-            if let peek = day.peek {
+            if let peek = day.peek, peek.needsActionFirst {
+                // Tomorrow's exam with prep tonight: the full card, not a peek.
+                NextCardView(card: peek, onTap: { onSelect(peek.eventID) },
+                             onAction: { onAction(peek.eventID, $0, $1) })
+                    .padding(.top, 18)
+            } else if let peek = day.peek {
                 Button { onSelect(peek.eventID) } label: {
                     HStack(spacing: 12) {
                         if !typeSize.isAccessibilitySize {

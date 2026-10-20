@@ -238,6 +238,14 @@ public enum EventSemanticsPrompt {
         return label
     }
 
+    /// The retry label for any event. An event the user typed into Olana has no
+    /// calendar, but it is theirs, so it retries as "Personal": in S5, that label
+    /// let "Bankruptcy hearing" through where no label was blocked.
+    public static func retryLabel(after raw: String?, typed: Bool) -> String? {
+        if let label = retryCalendarLabel(after: raw) { return label }
+        return typed && raw == nil ? "Personal" : nil
+    }
+
     /// "Personal" for a consumer mail domain, "Work" for any other domain, nil
     /// when the name isn't an email address. The domain list is a lookup table of
     /// providers, like the meeting-host list, not a judgement about events.

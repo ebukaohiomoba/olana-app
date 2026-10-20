@@ -49,7 +49,7 @@ struct DayRailView: View {
                     .padding(.top, 8)
             }
             VStack(alignment: .leading, spacing: 0) {
-                nowRow
+                if day.isToday { nowRow }
                 ForEach(segments, id: \.id) { seg in
                     switch seg.kind {
                     case .gap(let label):
@@ -190,6 +190,12 @@ struct DayRailView: View {
                 Text(secondLine(item))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(c.muted)
+                if let note = item.note {
+                    Text(note)
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(c.goldText)
+                        .padding(.top, 1)
+                }
             }
             .offset(y: -3)
             Spacer(minLength: 0)
@@ -267,7 +273,8 @@ struct DayRailView: View {
 
     private func accessibilityLabel(_ item: RailItem) -> String {
         if item.isTask { return "\(item.title), task, not done" }
-        return "\(item.title), \(HomeFormat.tierName(item.urgency)), \(HomeFormat.clock(item.start)) to \(HomeFormat.clock(item.end))"
+        let base = "\(item.title), \(HomeFormat.tierName(item.urgency)), \(HomeFormat.clock(item.start)) to \(HomeFormat.clock(item.end))"
+        return item.note.map { base + ", " + $0 } ?? base
     }
 
     // MARK: Segments

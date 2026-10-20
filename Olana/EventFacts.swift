@@ -360,8 +360,10 @@ enum TextGuard {
     struct Result: Equatable { var kept: [String]; var dropped: [String] }
 
     /// Model-written steps and bring items: drop any with a digit, a time word,
-    /// or over 60 characters. Item by item; the rest still show.
-    static func filter(_ items: [String]) -> Result {
+    /// or over 60 characters. Item by item; the rest still show. With `source`
+    /// (the invite or message), a number or time word copied from it may stay
+    /// ("Read chapter 4", "Fast for 12 hours"); one the model made up never does.
+    static func filter(_ items: [String], source: String? = nil) -> Result {
         var r = Result(kept: [], dropped: [])
         var seen = Set<String>()
         for raw in items {
@@ -370,15 +372,32 @@ enum TextGuard {
             let key = item.lowercased()
             guard !seen.contains(key) else { continue }
             seen.insert(key)
-            if passes(item) { r.kept.append(item) } else { r.dropped.append(item) }
+            if passes(item, source: source) { r.kept.append(item) } else { r.dropped.append(item) }
         }
         return r
     }
 
-    static func passes(_ item: String) -> Bool {
-        guard item.count <= maxLength, !item.contains(where: \.isNumber) else { return false }
-        let words = item.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "." })
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
-        return !words.contains { timeWords.contains($0) }
+    static func passes(_ item: String, source: String? = nil) -> Bool {
+        guard item.count <= maxLength else { return false }
+        let copied = source.map(tokens) ?? []
+        let words = tokens(item)
+        // Numbers and time words only when the same token is in the source.
+        if words.contains(where: { $0.contains(where: \.isNumber) && !copied.contains($0) }) { return false }
+        return !words.contains { timeWords.contains($0) && !copied.contains($0) }
+    }
+
+    /// Lowercased word tokens, plurals folded ("cards" → "card", "w-2s" → "w-2"),
+    /// so the same thing matches however it was written.
+    static func tokens(_ text: String) -> Set<String> {
+        Set(text.lowercased()
+            .split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "-" || $0 == "'") })
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "-'")) }
+            .filter { !$0.isEmpty }
+            .map(singular))
+    }
+
+    static func singular(_ w: String) -> String {
+        guard w.count > 3, w.hasSuffix("s"), !w.hasSuffix("ss"), !timeWords.contains(w) else { return w }
+        return String(w.dropLast())
     }
 }

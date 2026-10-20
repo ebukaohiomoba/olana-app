@@ -20,6 +20,50 @@ func check(_ name: String, _ ok: Bool, _ got: @autoclosure () -> String = "") {
 
 let args = CommandLine.arguments
 
+if args.count >= 3 && args[1] == "prep" {
+    // Prep eval: title | calendar | location | notes | expect | forbid | group
+    // Scores real prep that survives (expect) and nonsense that shows (forbid).
+    guard case .available = SystemLanguageModel.default.availability else { print("Apple Intelligence unavailable"); exit(1) }
+    let rows = try String(contentsOfFile: args[2], encoding: .utf8).split(separator: "\n").compactMap { l -> [String]? in
+        let t = l.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty, !t.hasPrefix("#") else { return nil }
+        let r = t.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+        return r.count >= 7 ? r : nil
+    }
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("prep_eval_\(UUID().uuidString).json")
+    let service = EventAssistService(cache: AssistCache(url: cacheURL))
+    func pad(_ s: String, _ n: Int) -> String { s.count >= n ? String(s.prefix(n - 1)) + " " : s + String(repeating: " ", count: n - s.count) }
+    func list(_ s: String) -> [String] { s == "-" ? [] : s.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces).lowercased() } }
+    var expectN = 0, expectOK = 0, forbidShown = 0, eventsWithNonsense = 0, eventsMissing = 0
+    for r in rows {
+        let notes = r[3] == "-" ? "" : r[3]
+        let loc = r[2] == "-" ? nil : r[2]
+        let input = AssistInput(title: r[0], calendar: r[1].isEmpty ? nil : r[1], location: loc,
+                                facts: NotesCleaner.clean(notes: notes, location: loc))
+        let res: AssistResult
+        switch await service.assist(input) {
+        case .full(let x), .basic(let x): res = x
+        default: print(pad(r[0], 32), "NO ANSWER"); continue
+        }
+        let shown = (res.steps + res.bring).map { $0.lowercased() }
+        let missing = list(r[4]).filter { e in !shown.contains { $0.contains(e) } }
+        let nonsense = shown.filter { s in list(r[5]).contains { f in s.contains(f) } }
+        expectN += list(r[4]).count; expectOK += list(r[4]).count - missing.count
+        forbidShown += nonsense.count
+        if !nonsense.isEmpty { eventsWithNonsense += 1 }
+        if !missing.isEmpty { eventsMissing += 1 }
+        let flag = (nonsense.isEmpty ? "" : "NONSENSE ") + (missing.isEmpty ? "" : "MISSING")
+        print(pad(r[0], 32) + pad(r[6], 9) + "steps: \(res.steps)  bring: \(res.bring)  " + flag)
+        if !missing.isEmpty { print("     missing: \(missing)") }
+        if !nonsense.isEmpty { print("     nonsense: \(nonsense)") }
+    }
+    try? FileManager.default.removeItem(at: cacheURL)
+    print("\nreal prep shown \(expectOK)/\(expectN) (\(expectN == 0 ? 0 : expectOK * 100 / expectN)%) · events missing prep \(eventsMissing)/\(rows.count)")
+    print("nonsense shown \(forbidShown) · events with nonsense \(eventsWithNonsense)/\(rows.count)")
+    print("Bars: nonsense 0 · real prep ≥ 90%")
+    exit(0)
+}
+
 if args.count >= 3 && args[1] == "model" {
     // Format: title | calendar | location | notes ("\n" for line breaks) | locationKind ("/" alts) |
     //         travel (yes no ?) | attendance (inPerson virtual unsure none ?) | forbidden text (";", "-") | group
@@ -96,14 +140,15 @@ let raw = AssistRaw(locationKind: .streetAddress, kind: .inPersonMeeting, needsT
                     bring: ["Printed agenda", "Laptop charger", "Bring 2 copies"],
                     linkLabels: [("L1", "Q3 deck"), ("l2", "Numbers sheet"), ("L9", "Phishing link"), ("L2", "Dup")])
 let res = AssistGuard.result(raw, input: input)
-check("guard: steps with times or digits dropped ('Q3' too: strict in v1)", res.steps.isEmpty, "\(res.steps)")
+check("guard: numbers copied from the invite stay ('Q3'), made-up times go ('by 2pm')",
+      res.steps == ["Skim the Q3 deck"], "\(res.steps)")
 let okSteps = AssistGuard.result(AssistRaw(steps: ["Skim the deck", "Print the agenda"]), input: input)
 check("guard: plain steps kept", okSteps.steps == ["Skim the deck", "Print the agenda"])
 check("guard: bring items with digits, or not in the invite, dropped", res.bring == ["Printed agenda"], "\(res.bring)")
 check("guard: link labels only for real IDs, case-insensitive, first wins",
       res.linkLabels == ["L1": "Q3 deck", "L2": "Numbers sheet"], "\(res.linkLabels)")
 check("guard: 'Q3' in a label is allowed because the title says Q3", res.linkLabels["L1"] == "Q3 deck")
-check("guard: every drop is logged", res.dropped.count == 6, "\(res.dropped)")
+check("guard: every drop is logged", res.dropped.count == 5, "\(res.dropped)")
 check("guard: helpers deduped in the model's order", res.helpers == [.leave, .prep, .materials, .bring])
 check("attendance: place and link with 'unsure' stays unsure (the card asks)", res.attendance == .unsure)
 check("buckets become minutes", res.arriveEarlyMinutes == 15 && res.outTheDoorMinutes == 10 && res.effortMinutes == 30)
@@ -228,6 +273,56 @@ cache.set("b", fb, now: t0.addingTimeInterval(31 * 24 * 3600))
 check("cache: entries unused for 30 days are dropped", AssistCache(url: url).get("a") == nil && cache.count == 1)
 cache.clear()
 check("cache: clear empties it (Settings › Privacy)", AssistCache(url: url).count == 0)
+
+// MARK: Prep that makes sense (the prep audit, 2026-10-19)
+
+func prep(_ title: String, notes: String, steps: [String] = [], bring: [String] = []) -> AssistResult {
+    AssistGuard.result(AssistRaw(steps: steps, bring: bring),
+                       input: AssistInput(title: title, calendar: "School", location: nil,
+                                          facts: NotesCleaner.clean(notes: notes, location: nil)))
+}
+let quiz = prep("Spanish quiz", notes: "Quiz on chapter 6 vocab.", steps: ["prepare for quiz", "review chapter 6 vocab"],
+                bring: ["quiz sheet"])
+check("prep: the event isn't something to bring ('quiz sheet')", quiz.bring.isEmpty, "\(quiz.bring)")
+check("prep: 'prepare for quiz' is the event; copied 'chapter 6' stays", quiz.steps == ["review chapter 6 vocab"], "\(quiz.steps)")
+let rehearse = prep("Board presentation", notes: "Do a run-through of the presentation with Sam first.",
+                    steps: ["Rehearse the presentation", "Prepare for the presentation"])
+check("prep: rehearsing the event is real prep; preparing for it is vague",
+      rehearse.steps == ["Rehearse the presentation"], "\(rehearse.steps)")
+let book = prep("Book club", notes: "This month: Piranesi. Finish the book!", steps: ["Finish the book"])
+check("prep: a title word that isn't the event stays ('Finish the book')", book.steps == ["Finish the book"], "\(book.steps)")
+let takeMom = AssistGuard.result(AssistRaw(bring: ["mom"]), input: AssistInput(title: "Take mom to the airport", calendar: nil,
+                                                                                location: nil, facts: .empty))
+check("prep: 'take' in a title isn't a bring list", takeMom.bring.isEmpty, "\(takeMom.bring)")
+let bringTitle = AssistGuard.result(AssistRaw(bring: ["snacks"]), input: AssistInput(title: "Soccer game, bring snacks",
+                                                                                      calendar: nil, location: nil, facts: .empty))
+check("prep: 'bring' in a title still is", bringTitle.bring == ["snacks"], "\(bringTitle.bring)")
+let travel = prep("Dentist", notes: "Arrive 10 minutes early.", steps: ["Go to Smile Dental", "Arrive early"])
+check("prep: getting there isn't a prep step", travel.steps.isEmpty, "\(travel.steps)")
+let hosting = prep("Hosting dinner for 12", notes: "Buy groceries, set the table, prep the lasagna.",
+                   steps: ["Buy groceries", "Set the table", "Prep the lasagna"], bring: ["groceries", "table", "lasagna"])
+check("prep: what a step uses up isn't brought", hosting.bring.isEmpty && hosting.steps.count == 3, "\(hosting.bring)")
+let printed = prep("Client pitch", notes: "Print the one-pagers and bring them.", steps: ["Print the one-pagers"],
+                   bring: ["one-pagers"])
+check("prep: what a step prints is still brought", printed.bring == ["one-pagers"], "\(printed.bring)")
+let dupes = prep("Job interview", notes: "Bring copies of your resume. Bring the gift.", bring: ["resume", "copies", "resume copies", "gift", "the gift"])
+check("prep: duplicates merge to the fullest wording", dupes.bring == ["resume copies", "gift"], "\(dupes.bring)")
+let colon = prep("Colonoscopy", notes: "Follow the bowel prep instructions. Do not eat after midnight. Bring a driver.",
+                 steps: ["Follow the bowel prep instructions", "Do not eat after midnight"], bring: ["driver"])
+check("prep: follow / do not are steps; a driver is arranged",
+      colon.steps == ["Follow the bowel prep instructions", "Do not eat after midnight", "Arrange a driver"] && colon.bring.isEmpty,
+      "\(colon.steps) \(colon.bring)")
+let fast = prep("Fasting blood draw", notes: "Fast for 12 hours before your appointment.", steps: ["Fast for 12 hours", "Fast for 8 hours"])
+check("prep: a duration copied stays, a made-up one goes", fast.steps == ["Fast for 12 hours"], "\(fast.steps)")
+let ids = prep("Tax filing", notes: "Gather W-2s and 1099s. Bring ID.", steps: ["Gather W-2s"], bring: ["ID"])
+check("prep: short words count ('ID', 'W-2s')", ids.steps == ["Gather W-2s"] && ids.bring == ["ID"], "\(ids.steps) \(ids.bring)")
+let open = prep("Chem test", notes: "Test on gas laws. Open note.", steps: ["open note", "study gas laws"])
+check("prep: a rule about the test isn't a step ('open note')", open.steps == ["study gas laws"], "\(open.steps)")
+let flightCode = prep("Flight to Austin", notes: "Delta DL 1234. Confirmation ABC123. Bring your passport.",
+                      bring: ["Delta DL 1234", "ABC123", "passport"])
+check("prep: flight numbers and booking codes aren't things to bring", flightCode.bring == ["passport"], "\(flightCode.bring)")
+check("prep: form names with numbers still are ('1099s', 'No. 2 pencils')",
+      prep("Tax filing", notes: "Bring 1099s and two No. 2 pencils.", bring: ["1099s", "two No. 2 pencils"]).bring.count == 2)
 
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

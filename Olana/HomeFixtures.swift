@@ -35,10 +35,38 @@ enum HomeFixtures {
               assisted: assisted ?? (urgency != .low))
     }
 
-    /// The mockup's Tuesday: two things done, client review at 3 with 40 min prep.
+    /// The mockup's Tuesday: two things done, client review at 3 with 40 min prep,
+    /// and the rest of the week for the ribbon (week_ribbon.html).
     static func fullDay() -> HomeDay {
+        HomeDayBuilder.build(inputs: fullWeek(), now: at(13, 52), bed: at(22, 0))
+    }
+
+    /// The ribbon's next day picked: tomorrow's rail, with the dentist's leave-by.
+    static func tomorrow() -> HomeDay {
+        HomeDayBuilder.build(inputs: fullWeek(), day: at(0, 0, dayOffset: 1), now: at(13, 52))
+    }
+
+    static func fullWeek() -> [HomeDayBuilder.Input] {
+        var dentist = input("Dentist", at(15, 0, dayOffset: 1), at(16, 0, dayOffset: 1), .medium, place: "Smile Dental")
+        dentist.exec = ExecTimes(.init(start: at(15, 0, dayOffset: 1), end: at(16, 0, dayOffset: 1), actBy: nil,
+                                       attendance: .inPerson, needsTravel: true, eta: 18 * 60,
+                                       arriveEarly: 10 * 60, outTheDoor: 5 * 60))
+        dentist.tripPhrase = "18 min drive"
+        return fullDayInputs() + [
+            input("Standup", at(9, 30, dayOffset: 1), at(9, 45, dayOffset: 1), .low),
+            dentist,
+            input("Submit expenses", at(18, 0, dayOffset: 1), at(18, 0, dayOffset: 1), .medium, isTask: true, assisted: false),
+            input("Call mom", at(19, 30, dayOffset: 1), at(20, 0, dayOffset: 1), .low),
+            input("Quarterly review", at(9, 0, dayOffset: 3), at(10, 0, dayOffset: 3), .high, prepHours: 2),
+            input("Design crit", at(13, 0, dayOffset: 3), at(14, 0, dayOffset: 3), .medium),
+            input("Dinner with Jo", at(19, 0, dayOffset: 3), at(21, 0, dayOffset: 3), .medium),
+            input("Haircut", at(11, 0, dayOffset: 4), at(11, 45, dayOffset: 4), .low, assisted: true),
+        ]
+    }
+
+    static func fullDayInputs() -> [HomeDayBuilder.Input] {
         let review = input("Client review", at(15, 0), at(16, 0), .high, prepHours: 40.0 / 60, place: "Room 2")
-        let inputs = [
+        return [
             input("Standup", at(9, 30), at(9, 45), .low),
             input("Send invoice", at(11, 0), at(11, 0), .medium, isTask: true, completed: true),
             review,
@@ -46,7 +74,6 @@ enum HomeFixtures {
             input("Gym", at(19, 0), at(20, 0), .low),
             input("Call mom", at(20, 30), at(21, 0), .low),
         ]
-        return HomeDayBuilder.build(inputs: inputs, now: at(13, 52), bed: at(22, 0))
     }
 
     /// Client review in 90 minutes at an address, with an invite, a deck link,
@@ -101,6 +128,21 @@ enum HomeFixtures {
         return HomeDayBuilder.build(inputs: [dentist, input("Gym", at(19, 0), at(20, 0), .low)], now: at(18, 0), bed: at(22, 0))
     }
 
+    /// A light day where nothing matters enough for the card: "Up next".
+    static func quietDay() -> HomeDay {
+        HomeDayBuilder.build(inputs: [
+            input("Standup", at(9, 30), at(9, 45), .low),
+            input("Coffee with Jo", at(15, 0), at(15, 30), .low, place: "Blue Bottle"),
+            input("Gym", at(19, 0), at(20, 0), .low),
+        ], now: at(13, 52), bed: at(22, 0))
+    }
+
+    /// The night before an exam with nothing else today: the full card on the open day.
+    static func examEve() -> HomeDay {
+        let exam = input("Organic chemistry exam", at(9, 0, dayOffset: 1), at(11, 0, dayOffset: 1), .high, prepHours: 12)
+        return HomeDayBuilder.build(inputs: [exam], now: at(19, 30), bed: at(22, 0))
+    }
+
     /// Saturday with nothing on it; the next thing that matters is Thursday.
     static func emptyDay() -> HomeDay {
         let review = input("Quarterly review", at(9, 0, dayOffset: 2), at(10, 0, dayOffset: 2), .high, prepHours: 2)
@@ -112,6 +154,8 @@ struct HomeFixtureScreen: View {
     let which: String
     @State private var tab: OlanaTab = .home
     @StateObject private var store = EventStore()
+    /// `onboarding-flow`: the last step hands off to home, like the app does.
+    @State private var onboarded = false
 
     var body: some View {
         if which == "paywall" {
@@ -145,22 +189,54 @@ struct HomeFixtureScreen: View {
             .environmentObject(AppServices.shared.calendarManager)
             .environmentObject(AppServices.shared.calendarDataStore)
             .homePalette()
-        } else if which == "onboarding" || which == "onboarding-calendar" {
-            // `-homeFixture onboarding` (promise) or `onboarding-calendar`.
-            OnboardingView(start: which == "onboarding" ? .promise : .calendar) {}.homePalette()
+        } else if which == "reveal" || which == "reveal-empty" {
+            // `-homeFixture reveal`: the onboarding reveal on a fixed week, judged
+            // one event at a time; `reveal-empty` has no events.
+            OnboardingView(start: .reveal,
+                           fixture: .init(reveal: which == "reveal" ? RevealFixture.source() : { RevealSnapshot(done: true) })) {}
+                .homePalette()
+        } else if which.hasPrefix("onboarding") {
+            // `-homeFixture onboarding` (promise), `onboarding-calendar`, `onboarding-notify`,
+            // or `onboarding-flow`: every step playing itself, for recordings.
+            // Nothing is asked of the system; the reveal runs on the fixed week.
+            let start: OnboardingView.Step = which == "onboarding-calendar" ? .calendar
+                : which == "onboarding-notify" ? .notify : .promise
+            Group {
+                if onboarded {
+                    home.transition(.opacity.combined(with: .scale(scale: 1.02)))
+                } else {
+                    OnboardingView(start: start, fixture: .init(reveal: RevealFixture.source(), autoplay: which == "onboarding-flow",
+                                                                card: which == "onboarding-notify" ? RevealFixture.card() : nil)) {
+                        guard which == "onboarding-flow" else { return }
+                        withAnimation(.easeInOut(duration: 0.45)) { onboarded = true }
+                    }
+                    .homePalette()
+                    .transition(.opacity)
+                }
+            }
         } else if which.hasPrefix("add") {
             // `-homeFixture add` (typing, place chip), `add-task` (no end time),
-            // `add-review` (after Next), `add-analyzing` (Next, still reading): a fixed message.
-            AddEventView(fixtureText: which == "add" ? "Dentist tomorrow 3pm to 4pm at Smile Dental, bring insurance card"
-                                                     : "Dentist tomorrow 3pm at Smile Dental, bring insurance card",
-                         fixtureNext: which == "add-review" || which == "add-analyzing")
-                .environmentObject(store)
-                .homePalette()
-                .onAppear {
-                    CaptureParser.fixtureOutput = CaptureModelOutput(placeText: "at Smile Dental", prepItems: ["bring insurance card"],
-                                                                     attendance: .inPerson, likelyNeedsTravel: true)
-                    CaptureParser.fixtureDelay = which == "add-analyzing" ? 30 : 0
-                }
+            // `add-review` (after Next, judged), `add-tiers` (tier chip opened),
+            // `add-unjudged` (the model couldn't judge), `add-analyzing` (still reading).
+            // `add-deadline` (a task) and `add-nodate` (nothing read: "When?").
+            Color.clear.sheet(isPresented: .constant(true)) {
+                AddEventView(fixtureText: which == "add" ? "Dentist tomorrow 3pm to 4pm at Smile Dental, bring insurance card"
+                                        : which == "add-deadline" ? "Submit expenses tomorrow by 5pm"
+                                        : which == "add-nodate" ? "Call the bank"
+                                        : "Dentist tomorrow 3pm at Smile Dental, bring insurance card",
+                             fixtureNext: !["add", "add-task", "add-deadline", "add-nodate"].contains(which),
+                             fixtureTiers: which == "add-tiers")
+                    .environmentObject(store)
+                    .homePalette()
+                    .onAppear {
+                        CaptureParser.fixtureOutput = CaptureModelOutput(placeText: "at Smile Dental", prepItems: ["bring insurance card"],
+                                                                         attendance: .inPerson, likelyNeedsTravel: true)
+                        CaptureParser.fixtureDelay = which == "add-analyzing" ? 30 : 0
+                        AIAssistant.fixtureSemantics = which == "add-unjudged" ? nil
+                            : EventSemantics(consequence: .moderate, movability: .difficult,
+                                             requiresPreparation: false, prepNeed: .none, category: .health)
+                    }
+            }
         } else if which.hasPrefix("spikes-") {
             // `-spikes open` or `-spikes autorun`: the Spikes screen, no login.
             NavigationStack { SpikesView(autorun: which == "spikes-autorun") }
@@ -173,6 +249,9 @@ struct HomeFixtureScreen: View {
     @ViewBuilder
     private var home: some View {
         let day = which == "empty" ? HomeFixtures.emptyDay()
+            : which == "quiet" ? HomeFixtures.quietDay()
+            : which == "tomorrow" ? HomeFixtures.tomorrow()
+            : which == "exam-eve" ? HomeFixtures.examEve()
             : which == "leave" ? HomeFixtures.leaveDay()
             : which == "where" ? HomeFixtures.whereDay()
             : which == "from" ? HomeFixtures.fromDay() : HomeFixtures.fullDay()

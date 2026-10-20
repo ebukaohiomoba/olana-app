@@ -23,10 +23,11 @@ struct NextCardView: View {
         VStack(alignment: .leading, spacing: 0) {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 0) {
-                Text("● NEXT THAT MATTERS")
+                // "Up next" when nothing matters enough: no dot, no tier color.
+                Text(card.quiet ? "UP NEXT" : "● NEXT THAT MATTERS")
                     .font(.system(size: 11, weight: .bold))
                     .tracking(1.5)
-                    .foregroundStyle(c.tier(card.urgency))
+                    .foregroundStyle(card.quiet ? c.muted : c.tier(card.urgency))
 
                 (Text(card.lead).foregroundStyle(c.text)
                  + Text(card.gold).foregroundStyle(c.goldText)

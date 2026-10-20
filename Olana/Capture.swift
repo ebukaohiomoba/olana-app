@@ -448,6 +448,39 @@ struct CaptureDraft: Equatable {
     }
 }
 
+// MARK: - Task or event (no switch)
+
+/// Whether a typed message is an event (has a span, a place or a call) or a
+/// task (a thing to do by a time, kept until checked off). There is no switch:
+/// the end-time chip is the override (add an end and it's an event, remove it
+/// and it's a task).
+enum AddKind {
+    static func isEvent(hasEnd: Bool, draft: CaptureDraft, message: String) -> Bool {
+        if hasEnd || draft.impliesEvent { return true }
+        if isDeadline(message) { return false }
+        let attendance = draft.effective.attendance
+        return attendance == .inPerson || attendance == .virtual
+    }
+
+    /// "Report due Friday", "pay rent by the 1st", "remind me to call the bank":
+    /// a deadline or a to-do, not something that happens at a time.
+    static func isDeadline(_ message: String) -> Bool {
+        let t = " " + CaptureCode.squash(message) + " "
+        if [" due ", " deadline ", " remind me to ", " reminder to ", " don't forget to ", " dont forget to "]
+            .contains(where: { t.contains($0) }) { return true }
+        let byWhen = #" (by|before) (\d|noon|midnight|tonight|today|tomorrow|eod|end of|the end|mon|tue|wed|thu|fri|sat|sun|next|this)"#
+        return t.range(of: byWhen, options: .regularExpression) != nil
+    }
+
+    /// The message for the date detector: deadline connectors removed, since
+    /// NSDataDetector splits "tomorrow by 5pm" into noon tomorrow and 5pm today,
+    /// and reads "due friday 5pm" as a time today.
+    static func dateText(_ message: String) -> String {
+        message.replacingOccurrences(of: #"(?i)\b(by|due|before)\b\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+    }
+}
+
 // MARK: - Model call
 
 enum CaptureParser {

@@ -1,0 +1,53 @@
+# Prep eval (2026-10-19 audit). Labels are mine; review before treating as final.
+# title | calendar | location | notes ("-" none) | expect (";" each must show, "-" none) | forbid (";" none may show, "-") | group
+# Matching is case-insensitive substring over shown steps and bring items.
+#
+# Exams and tests
+Final exam | School | Hall 210 | Covers chapters 1-8. Bring a calculator and your student ID. No phones. | calculator;student id | exam;test;final;go to | exam
+Biology midterm | School | Science Building 101 | Midterm exam on cell biology. Review the study guide posted on Canvas. | study guide | prepare for exam;midterm;go to | exam
+Chem test | School | - | Test on stoichiometry and gas laws. Open note. | stoichiometry;gas laws | open note;test | exam
+Spanish quiz | School | Room 204 | Quiz on chapter 6 vocab. | chapter 6 | quiz | exam
+Math test | School | - | Unit 3 test. | - | test | exam
+DMV written test | Personal | DMV Downtown, 400 Main St | Bring your learner's permit application and proof of address. | permit application;proof of address | test;go to | exam
+SAT | Personal | Lincoln High School | Bring admission ticket, photo ID, two No. 2 pencils, approved calculator. | admission ticket;photo id;calculator | sat;go to | exam
+Lab practical | School | - | Bring lab coat and goggles. | lab coat;goggles | prepare for lab | exam
+Lecture: CS 6460 | School | Klaus 1443 | Read chapter 4 before class. | chapter 4 | prepare for class;lecture | class
+# Work
+Board presentation | Work | Boardroom 4A | Present Q3 results. Deck: final version due to Sarah by noon. | - | prepare for presentation | present
+Client pitch | Work | Acme HQ, 500 Market St | Pitch the redesign. Bring printed one-pagers. | one-pagers | pitch;go to | present
+Job interview | Personal | Google, 1600 Amphitheatre Pkwy | Interview with the hiring manager. Review the job description and bring copies of your resume. | job description;resume | interview;go to | interview
+Phone screen with recruiter | Personal | - | 30 minute intro call. Recruiter will call you. | - | phone;call | interview
+1:1 with manager | Work | Zoom | Agenda: project updates, career goals. | - | meeting | routine
+Sprint planning | Work | Conf Rm B | Review backlog before the meeting. | backlog | meeting | routine
+Team standup | Work | NYC-12-Huddle | - | - | standup;notebook | routine
+Quarterly report due | Work | - | Submit to finance. | - | report due | deadline
+Grant application due | Work | - | Upload budget and narrative to the portal. | budget | application due | deadline
+# Medical
+Dentist appointment | Personal | Smile Dental, 22 Oak Ave | Please arrive 10 minutes early and bring your insurance card. | insurance card | appointment;go to;arrive | medical
+Colonoscopy | Personal | City Hospital GI Center | Follow the bowel prep instructions the day before. Do not eat after midnight. Bring a driver. | bowel prep;midnight;driver | colonoscopy | medical
+Fasting blood draw | Personal | Quest Diagnostics | Fast for 12 hours before your appointment. Bring your lab order. | 12 hours;lab order | blood draw | medical
+Physical therapy | Personal | ProPT, 12 Elm St | Wear comfortable clothes. | comfortable clothes | therapy | medical
+Therapy session | Personal | - | - | - | notebook;pen;session | medical
+Vet appointment | Personal | Banfield Pet Hospital | Bring vaccination records. | vaccination records | appointment | medical
+# Travel
+Flight to Austin | Travel | JFK Terminal 4 | Delta DL 1234. Confirmation ABC123. Check in online 24 hours before. | check in online | flight;go to;dl 1234;abc123 | travel
+Train to Boston | Travel | Penn Station | Amtrak 2150. Bring your ticket QR code. | ticket | train to | travel
+Hotel check-in | Travel | Marriott Downtown | Check-in after 3pm. Bring ID and credit card. | id | check-in;go to | travel
+Take mom to the airport | Personal | - | - | - | mom;go | travel
+# Fitness, family, social
+Half marathon | Personal | Central Park | Pick up your bib on Friday. Race starts at 7am. | bib | marathon;7am | fitness
+Gym | Personal | Equinox | - | - | clothes;gym | fitness
+Soccer game | Family | Riverside Field 3 | Bring orange slices for the team. Wear the blue jersey. | orange slices;jersey | game;go to | family
+Parent-teacher conference | Family | Lincoln Elementary, Room 12 | 15 minute slot with Ms. Lee. | - | conference;notebook | family
+Hosting dinner for 12 | Personal | - | Buy groceries, set the table, prep the lasagna. | groceries;table;lasagna | - | social
+Book club | Personal | Sara's place | This month: Tomorrow and Tomorrow and Tomorrow. Finish the book! | finish the book | book club | social
+Wedding | Personal | The Plaza Hotel | Black tie. Bring the gift. | gift | wedding;go to | social
+Piano recital | Family | Community Hall | Students arrive 30 min early. Bring sheet music. | sheet music | recital;arrive | perform
+# Legal, errands
+Court date | Personal | County Courthouse, Room 3B | Bring all documents related to the case. | documents | court date | legal
+Tax filing | Personal | - | Gather W-2s and 1099s. | w-2 | tax filing | legal
+Mortgage signing | Personal | First Title Co, 88 Pine St | Bring photo ID and a cashier's check. | photo id;cashier | signing;go to | legal
+Pick up prescription | Personal | CVS, 3rd Ave | - | - | prescription;go to | errand
+Oil change | Personal | Jiffy Lube | - | - | oil;filter | errand
+Take the dog to the vet | Personal | - | - | - | dog;go | errand
+Return library books | Personal | Main Library | - | - | go to | errand

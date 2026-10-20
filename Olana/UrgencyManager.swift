@@ -73,9 +73,9 @@ public final class UrgencyManager: ObservableObject {
     /// nil when the model cannot judge it, so the UI offers no suggestion rather
     /// than presenting a default as if it were one.
     public func classify(text: String, date: Date?,
-                         calendarName: String? = nil) async -> UrgencyClassification? {
+                         calendarName: String? = nil, typed: Bool = false) async -> UrgencyClassification? {
         guard case .judged(let sem) = await AIAssistant.shared.semantics(
-            title: text, calendarName: calendarName
+            title: text, calendarName: calendarName, typed: typed
         ) else { return nil }
         return build(sem, start: date)
     }
@@ -87,7 +87,8 @@ public final class UrgencyManager: ObservableObject {
             return build(cached, start: event.start)
         }
         let judged = event.record(await AIAssistant.shared.semantics(
-            title: event.title, calendarName: event.calendarName
+            title: event.title, calendarName: event.calendarName,
+            typed: event.externalCalendarId == nil
         ))
         try? context?.save()
         return judged.map { build($0, start: event.start) }

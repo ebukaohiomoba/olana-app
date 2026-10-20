@@ -3,8 +3,8 @@
 //  Olana
 //
 //  Redesigned: bottom sheet (60 % → full), two-step flow.
-//  Step 1 — NLP text input, detected date/time/place chips, quick-date + time pickers.
-//  Step 2 — urgency cards with Olana's suggestion, notification preview, save.
+//  Step 1 — the message, with what was read as chips: 📅 🕐 🕑 📍 (tap to change).
+//  Step 2 — read-back chips with Olana's tier (cards on tap), "Is this important?" when unjudged, save.
 //
 
 import SwiftUI
@@ -43,14 +43,18 @@ struct AddEventView: View {
     @State private var captureBaseTitle = ""
     /// The capture parse while typing, so 📍 shows next to 📅 🕐 before Next.
     @State private var captureTask: Task<Void, Never>?
-    /// Set when the user taps Task or Event; a found place then won't switch it.
-    @State private var userChoseMode = false
+    /// The 🕑 chip as task-or-event override: true after the user sets an end,
+    /// false after they remove it. nil: inferred (`AddKind`).
+    @State private var endChoice: Bool?
+    /// The tier cards, opened from the tier chip on review.
+    @State private var showTiers = false
+    /// "Is this important?" answered on review (only asked when unjudged).
+    @State private var importantAnswer: AssistMode?
     @State private var placeholderIndex = 0
 
     // ── Pickers ───────────────────────────────────────────────────────
     @State private var showDatePicker = false
     @State private var showTimePicker = false
-    @State private var isEventMode: Bool = false
     @State private var selectedEndDate: Date? = nil
     @State private var extractedEndDate: Date? = nil
     @State private var showEndTimePicker = false
@@ -66,11 +70,23 @@ struct AddEventView: View {
 
     @FocusState private var isTextFieldFocused: Bool
 
+    // ── Sheet height: fits the content, so there's no empty space below it ──
+    @State private var barHeight: CGFloat = 60
+    @State private var contentHeight: CGFloat = 220
+    @State private var footerHeight: CGFloat = 86
+    @State private var bottomInset: CGFloat = 0
+    /// Starts at the usual step-1 height so the sheet opens at its size
+    /// instead of opening at another and then jumping.
+    @State private var detent: PresentationDetent = .height(AddEventView.openingHeight)
+    @State private var hasFitted = false
+    static let openingHeight: CGFloat = 412
+
     #if DEBUG
     /// Screenshot fixtures (`-homeFixture add…`): a message typed on appear,
     /// and Next pressed once the capture read is in.
     var fixtureText = ""
     var fixtureNext = false
+    var fixtureTiers = false
     #endif
 
     enum AddEventStep { case input, review }
@@ -81,24 +97,6 @@ struct AddEventView: View {
         "Interview Thursday 10am on Zoom, review my portfolio first",
         "Gym 6pm at Equinox Flatiron",
         "Flight Friday 7:30am from JFK T4, be there 2 hours early",
-    ]
-
-    // ── Quick-date: today + next 6 days ──────────────────────────────
-    private var quickDates: [(label: String, date: Date)] {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        return (0..<7).compactMap { offset in
-            guard let d = cal.date(byAdding: .day, value: offset, to: today) else { return nil }
-            let label: String
-            if offset == 0      { label = "TODAY" }
-            else if offset == 1 { label = "TOMORROW" }
-            else                { label = d.formatted(.dateTime.weekday(.abbreviated)).uppercased() }
-            return (label, d)
-        }
-    }
-
-    private let quickTimes: [(label: String, hour: Int)] = [
-        ("9 AM", 9), ("12 PM", 12), ("3 PM", 15), ("5 PM", 17), ("8 PM", 20)
     ]
 
     // MARK: - Body
@@ -112,6 +110,7 @@ struct AddEventView: View {
                     .padding(.top, 16)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 20)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
 
                 switch currentStep {
                 case .input:
@@ -129,6 +128,22 @@ struct AddEventView: View {
                 }
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { bottomInset = $0 }
+        // The sheet is as tall as what's on it, and grows as chips wrap or the
+        // tier cards open; Large stays available for long content.
+        .presentationDetents([.height(hasFitted ? fittedHeight : Self.openingHeight), .large], selection: $detent)
+        .onChange(of: fittedHeight) { _, h in
+            guard detent != .large else { return }
+            // The first fit lands without animation; later changes (chips
+            // wrapping, tier cards opening) animate.
+            if hasFitted { withAnimation(.snappy) { detent = .height(h) } }
+            else {
+                var t = Transaction(); t.disablesAnimations = true
+                withTransaction(t) { hasFitted = true; detent = .height(h) }
+            }
+        }
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(24)
         .onAppear { isTextFieldFocused = (currentStep == .input) }
         #if DEBUG
         .task {
@@ -137,6 +152,9 @@ struct AddEventView: View {
             guard fixtureNext else { return }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             analyzeAndContinue()
+            guard fixtureTiers else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            showTiers = true
         }
         #endif
         .task {
@@ -242,9 +260,6 @@ struct AddEventView: View {
                         .font(HomeType.serif(size: 30))
                         .foregroundStyle(c.text)
 
-                    // Task / Event toggle
-                    taskEventToggle
-
                     // Text input card
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top, spacing: 8) {
@@ -274,12 +289,11 @@ struct AddEventView: View {
 
                         // What Olana read so far: 📅 🕐 🕑 from code, 📍 from the
                         // capture parse. Tap to change, × to remove.
-                        if activeDate != nil || (isEventMode && captureDraft.placeChip != nil) {
+                        // With nothing read yet, "📅 When?" is the way to pick a time.
+                        if !eventText.isEmpty {
                             CaptureChips(draft: $captureDraft, isTask: !isEventMode, placeOnly: true,
                                          onPlaceChanged: { _ in }) {
-                                if activeDate != nil {
-                                    dateTimeChips(includeEnd: activeEndDate != nil, clearable: true)
-                                }
+                                dateTimeChips(clearable: true)
                             }
                         }
                     }
@@ -292,96 +306,23 @@ struct AddEventView: View {
                     )
                     .shadow(color: c.cardShadow, radius: 8, x: 0, y: 3)
 
-                    // Quick date
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("QUICK DATE")
-                            .font(.caption.weight(.semibold))
-                            .tracking(1.2)
-                            .foregroundStyle(c.muted)
-
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(quickDates, id: \.label) { item in
-                                    quickDateCard(item: item)
-                                }
-                            }
-                            .padding(.horizontal, 2)
-                        }
-                    }
-
-                    // Time row — task mode unchanged / event mode split into START + END
-                    if !isEventMode {
-                        // ── Task mode: TIME row, pixel-perfect original ──────────────
-                        HStack(alignment: .center, spacing: 12) {
-                            Text("TIME")
-                                .font(.caption.weight(.semibold))
-                                .tracking(1.2)
-                                .foregroundStyle(c.muted)
-                                .frame(width: 40, alignment: .leading)
-
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(quickTimes, id: \.hour) { item in
-                                        quickTimeChip(item: item)
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // ── Event mode: START chips + END single-pill ────────────────
-                        VStack(alignment: .leading, spacing: 10) {
-
-                            // START — same quick chips, no frame constraint on label
-                            HStack(alignment: .center, spacing: 12) {
-                                Text("START")
-                                    .font(.caption.weight(.semibold))
-                                    .tracking(1.2)
-                                    .foregroundStyle(c.muted)
-                                    .fixedSize()
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        ForEach(quickTimes, id: \.hour) { item in
-                                            quickTimeChip(item: item)
-                                        }
-                                    }
-                                }
-                            }
-
-                            // END — same chips as START row
-                            HStack(alignment: .center, spacing: 12) {
-                                Text("END")
-                                    .font(.caption.weight(.semibold))
-                                    .tracking(1.2)
-                                    .foregroundStyle(c.muted)
-                                    .fixedSize()
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        ForEach(quickTimes, id: \.hour) { item in
-                                            quickEndTimeChip(item: item)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 100)
+                .padding(.bottom, 8)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
             // Nothing on the input step changes while the message is being read.
             .disabled(isAnalyzing)
             .opacity(isAnalyzing ? 0.6 : 1)
 
-            // "Next — set urgency" button
+            // "Next" button
             VStack(spacing: 0) {
                 Button(action: analyzeAndContinue) {
                     HStack(spacing: 10) {
                         if isAnalyzing {
                             ProgressView().tint(c.onGold)
                         }
-                        Text(isAnalyzing ? "Reading your event…" : "Next — set urgency")
+                        Text(isAnalyzing ? "Reading your event…" : "Next")
                             .font(.headline)
                             .foregroundStyle(c.onGold)
                             .contentTransition(.opacity)
@@ -396,205 +337,78 @@ struct AddEventView: View {
                 .padding(.bottom, 20)
             }
             .background(c.bg)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
         }
-        .onChange(of: isEventMode) { _, newValue in
-            // Only pre-fill end time when we already know the start.
-            // Using Date() as a fallback produces a stale "now + 1hr" that
-            // persists and overrides later NLP-detected times.
-            guard newValue,
-                  selectedEndDate == nil,
-                  extractedEndDate == nil,
-                  let knownStart = activeDate else { return }
-            selectedEndDate = knownStart.addingTimeInterval(3600)
-        }
+        // Setting an end time is the "it's an event" answer.
+        .onChange(of: selectedEndDate) { _, end in if end != nil { endChoice = true } }
     }
 
     // MARK: - NLP Token Chip
 
-    /// 📅 🕐 🕑, each opening its picker. Shared by both steps. On step 1 the
-    /// 📅 chip's × clears the date and both times.
+    /// 📅 🕐 🕑, each opening its picker, shared by both steps. The 🕑 chip is
+    /// also task-or-event: an event shows its end with ×, which makes it a task;
+    /// a task shows "End time", which makes it an event. On step 1 the 📅 chip's
+    /// × clears the date and both times.
     @ViewBuilder
-    private func dateTimeChips(includeEnd: Bool, clearable: Bool = false) -> some View {
-        let dateLabel = finalDateForSave.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-        if clearable {
-            HStack(spacing: 5) {
-                Button { showDatePicker = true } label: {
-                    HStack(spacing: 5) {
-                        Text("📅").font(.footnote)
-                        Text(dateLabel).font(.footnote.weight(.semibold)).foregroundStyle(c.text)
-                    }
+    private func dateTimeChips(clearable: Bool = false) -> some View {
+        if activeDate == nil {
+            whenChip("📅", "When?", dimmed: true) { showDatePicker = true }
+        } else {
+            whenChip("📅", finalDateForSave.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()),
+                     onTap: { showDatePicker = true },
+                     onRemove: clearable ? {
+                         withAnimation(.spring(response: 0.25)) {
+                             selectedDate = nil
+                             extractedDate = nil
+                             selectedEndDate = nil
+                             extractedEndDate = nil
+                             endChoice = nil
+                         }
+                     } : nil)
+            whenChip("🕐", finalDateForSave.formatted(.dateTime.hour().minute())) { showTimePicker = true }
+            if isEventMode {
+                whenChip("🕑", finalEndDateForSave.formatted(.dateTime.hour().minute()),
+                         onTap: { showEndTimePicker = true },
+                         onRemove: {
+                             withAnimation(.spring(response: 0.25)) {
+                                 selectedEndDate = nil
+                                 extractedEndDate = nil
+                                 endChoice = false
+                             }
+                         })
+            } else {
+                whenChip("🕑", "End time", dimmed: true) { showEndTimePicker = true }
+            }
+        }
+    }
+
+    /// A date or time chip, the same capsule as the capture chips.
+    private func whenChip(_ icon: String, _ label: String, dimmed: Bool = false,
+                          onTap: @escaping () -> Void, onRemove: (() -> Void)? = nil) -> some View {
+        HStack(spacing: 5) {
+            Button(action: onTap) {
+                HStack(spacing: 5) {
+                    Text(icon).font(.footnote)
+                    Text(label).font(.footnote.weight(.semibold)).foregroundStyle(dimmed ? c.muted : c.text)
                 }
-                .buttonStyle(.plain)
-                Button {
-                    withAnimation(.spring(response: 0.25)) {
-                        selectedDate = nil
-                        extractedDate = nil
-                        selectedEndDate = nil
-                        extractedEndDate = nil
-                    }
-                } label: {
+                .frame(minHeight: 22)
+            }
+            .buttonStyle(.plain)
+            if let onRemove {
+                Button(action: onRemove) {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(c.muted)
                         .frame(width: 22, height: 22).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear date and time")
+                .accessibilityLabel(icon == "🕑" ? "Remove end time" : "Clear date and time")
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 4)
-            .padding(.vertical, 4)
-            .background(c.gold.opacity(0.15))
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(c.gold.opacity(0.3), lineWidth: 1))
-        } else {
-            Button { showDatePicker = true } label: { tokenChip(label: dateLabel, icon: "📅") }
-                .buttonStyle(.plain)
         }
-        Button { showTimePicker = true } label: {
-            tokenChip(label: finalDateForSave.formatted(.dateTime.hour().minute()), icon: "🕐")
-        }
-        .buttonStyle(.plain)
-        if includeEnd {
-            Button { showEndTimePicker = true } label: {
-                tokenChip(label: finalEndDateForSave.formatted(.dateTime.hour().minute()), icon: "🕑")
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func tokenChip(label: String, icon: String) -> some View {
-        HStack(spacing: 5) {
-            Text(icon).font(.footnote)
-            Text(label)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(c.text)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(c.gold.opacity(0.15))
+        .padding(.leading, 12)
+        .padding(.trailing, onRemove == nil ? 12 : 4)
+        .padding(.vertical, 4)
+        .background(c.gold.opacity(dimmed ? 0.06 : 0.15))
         .clipShape(Capsule())
         .overlay(Capsule().stroke(c.gold.opacity(0.3), lineWidth: 1))
-    }
-
-    // MARK: - Quick Date Card
-
-    private func quickDateCard(item: (label: String, date: Date)) -> some View {
-        let cal = Calendar.current
-        let isSelected = activeDate.map { cal.isDate($0, inSameDayAs: item.date) } ?? false
-        let dayNum = cal.component(.day, from: item.date)
-        let weekday = item.date.formatted(.dateTime.weekday(.abbreviated))
-
-        return Button {
-            let hour = activeHour ?? 9
-            let newDate = cal.date(bySettingHour: hour, minute: 0, second: 0, of: item.date) ?? item.date
-            withAnimation(.spring(response: 0.25)) { selectedDate = newDate }
-        } label: {
-            VStack(spacing: 4) {
-                Text(item.label)
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.5)
-                    .foregroundStyle(isSelected ? c.onGold : c.muted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                Text("\(dayNum)")
-                    .font(.title2.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(isSelected ? c.onGold : c.text)
-
-                Text(weekday)
-                    .font(.caption)
-                    .foregroundStyle(isSelected ? c.onGold.opacity(0.8) : c.muted)
-            }
-            .frame(width: 72, height: 84)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isSelected ? c.gold : c.card)
-            )
-            .shadow(color: c.cardShadow, radius: 4, x: 0, y: 2)
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Quick Time Chip
-
-    private func quickTimeChip(item: (label: String, hour: Int)) -> some View {
-        let isSelected = activeHour == item.hour
-
-        return Button {
-            let base = activeDate ?? Date()
-            let newDate = Calendar.current.date(bySettingHour: item.hour, minute: 0, second: 0, of: base) ?? base
-            withAnimation(.spring(response: 0.25)) { selectedDate = newDate }
-        } label: {
-            Text(item.label)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isSelected ? c.onGold : c.text)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule().fill(isSelected ? c.gold : c.card)
-                )
-                .shadow(color: c.cardShadow, radius: 4, x: 0, y: 2)
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - End Time Chip
-
-    private func quickEndTimeChip(item: (label: String, hour: Int)) -> some View {
-        let currentHour = activeEndDate.map { Calendar.current.component(.hour, from: $0) }
-        let isSelected  = currentHour == item.hour
-
-        return Button {
-            let base    = activeDate ?? Date()
-            let newDate = Calendar.current.date(bySettingHour: item.hour, minute: 0, second: 0, of: base) ?? base
-            withAnimation(.spring(response: 0.25)) { selectedEndDate = newDate }
-        } label: {
-            Text(item.label)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isSelected ? c.onGold : c.text)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(isSelected ? c.gold : c.card))
-                .shadow(color: c.cardShadow, radius: 4, x: 0, y: 2)
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Task / Event Toggle
-
-    private var taskEventToggle: some View {
-        HStack(spacing: 0) {
-            toggleSegment(label: "Task", icon: "checkmark.circle", isSelected: !isEventMode) {
-                userChoseMode = true
-                withAnimation(.spring(response: 0.25)) { isEventMode = false }
-            }
-            toggleSegment(label: "Event", icon: "calendar", isSelected: isEventMode) {
-                userChoseMode = true
-                withAnimation(.spring(response: 0.25)) { isEventMode = true }
-            }
-        }
-        .padding(3)
-        .background(c.card2)
-        .clipShape(Capsule())
-    }
-
-    private func toggleSegment(label: String, icon: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.footnote.weight(.medium))
-                Text(label)
-                    .font(.subheadline.weight(.semibold))
-            }
-            .foregroundStyle(isSelected ? c.text : c.muted)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 20)
-            .background(
-                Capsule()
-                    .fill(isSelected ? c.card : Color.clear)
-                    .shadow(color: .black.opacity(isSelected ? 0.07 : 0), radius: 4, x: 0, y: 2)
-            )
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Date / Time Picker Sheets
@@ -604,10 +418,10 @@ struct AddEventView: View {
             DatePicker(
                 "Date",
                 selection: Binding(
-                    get: { activeDate ?? Date() },
+                    get: { activeDate ?? Self.nextHour() },
                     set: { selectedDate = $0 }
                 ),
-                displayedComponents: .date
+                displayedComponents: [.date, .hourAndMinute]
             )
             .datePickerStyle(.graphical)
             .tint(c.gold)
@@ -616,7 +430,11 @@ struct AddEventView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showDatePicker = false }
+                    Button("Done") {
+                        // Done without scrolling still keeps the time shown.
+                        if activeDate == nil { selectedDate = Self.nextHour() }
+                        showDatePicker = false
+                    }
                         .foregroundStyle(c.goldText)
                 }
             }
@@ -668,7 +486,10 @@ struct AddEventView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showEndTimePicker = false }
+                    Button("Done") {
+                        if selectedEndDate == nil { selectedEndDate = finalDateForSave.addingTimeInterval(3600) }
+                        showEndTimePicker = false
+                    }
                         .foregroundStyle(c.goldText)
                 }
             }
@@ -678,25 +499,25 @@ struct AddEventView: View {
 
     // MARK: - Review Step
 
+    /// One tap to save (PRD v3 §1.6): Olana's tier is a chip, not a step. The
+    /// tier cards open only from the chip; "Is this important?" shows only when
+    /// the model couldn't judge the title.
     private var reviewStep: some View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
-
-                    // Event summary card
                     summaryCard
 
-                    // Olana's suggestion — full-width card
-                    suggestionCard
-
-                    // 3 urgency option cards
-                    urgencyGridCards
-
-                    // Selected urgency notification preview
-                    selectedUrgencyDetailCard
+                    if mlClassification == nil {
+                        importantPrompt
+                    } else if showTiers {
+                        urgencyGridCards
+                        selectedUrgencyDetailCard
+                    }
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 100)
+                .padding(.bottom, 8)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
 
             // "Done — add it" button
@@ -713,6 +534,7 @@ struct AddEventView: View {
                 .padding(.bottom, 20)
             }
             .background(c.bg)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
         }
     }
 
@@ -724,9 +546,18 @@ struct AddEventView: View {
                 .font(HomeType.serif(size: 24))
                 .foregroundStyle(c.text)
 
-            // One row: when, then what Olana understood besides the time (PRD v6 §1.7a).
+            // One row: when, how important, then what Olana understood (PRD v6 §1.7a).
             CaptureChips(draft: $captureDraft, isTask: !isEventMode, onPlaceChanged: resolvePlace) {
-                dateTimeChips(includeEnd: isEventMode)
+                dateTimeChips()
+                if mlClassification != nil { tierChip }
+            }
+
+            // Why Olana judged it this way, while the judgement is Olana's.
+            if userSelectedUrgency == nil, let why = mlClassification?.rationale {
+                Text(why)
+                    .font(.footnote)
+                    .foregroundStyle(c.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -740,40 +571,47 @@ struct AddEventView: View {
         .shadow(color: c.cardShadow, radius: 8, x: 0, y: 3)
     }
 
-    // MARK: - Suggestion Card
-
-    private var suggestionCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("OLANA SUGGESTS")
-                .font(.caption2.weight(.semibold))
-                .tracking(1.5)
-                .foregroundStyle(c.muted)
-
-            if mlClassification == nil {
-                // No judgement to show. Say so rather than presenting the default
-                // selection below as if Olana had chosen it.
-                Text("Pick one below")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(c.text)
-
-                Text(AIAssistant.shared.unavailableMessage
-                     ?? "Olana couldn't tell how urgent this is from the title.")
-                    .font(.subheadline)
-                    .italic()
+    /// `● Critical ⌄`: Olana's tier. Tap to see the tiers and change it.
+    private var tierChip: some View {
+        let name = friendlyUrgencyName(for: resolvedUrgency)
+        return Button {
+            withAnimation(.spring(response: 0.3)) { showTiers.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Circle().fill(urgencyDotColor(for: resolvedUrgency)).frame(width: 9, height: 9)
+                Text(name).font(.footnote.weight(.semibold)).foregroundStyle(c.text)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
                     .foregroundStyle(c.muted)
-                    .lineSpacing(3)
-            } else {
-                Text(friendlyUrgencyName(for: mlUrgency))
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(c.text)
+                    .rotationEffect(.degrees(showTiers ? 180 : 0))
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(c.gold.opacity(0.15))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(c.gold.opacity(0.3), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Importance: \(name)")
+        .accessibilityHint("Shows the levels, to change how much help this gets")
+    }
 
-            if let rationale = mlClassification?.rationale {
-                Text(rationale)
-                    .font(.subheadline)
-                    .italic()
-                    .foregroundStyle(c.muted)
-                    .lineSpacing(3)
+    // MARK: - Is this important? (the model couldn't judge)
+
+    /// The same question and answers as the card and sheet (PRD v3 §1.6):
+    /// Yes is Always Assist, No is No Execution Alerts. Optional: unanswered,
+    /// the event saves unranked and the card asks later.
+    private var importantPrompt: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Is this important?").font(.headline).foregroundStyle(c.text)
+            Text(AIAssistant.shared.unavailableMessage
+                 ?? "Olana couldn't tell from the title. Your answer decides how much help this gets.")
+                .font(.footnote)
+                .foregroundStyle(c.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                importantAnswerPill("Yes", .always)
+                importantAnswerPill("No", .noAlerts)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -785,6 +623,22 @@ struct AddEventView: View {
                 .stroke(c.line, lineWidth: 1)
         )
         .shadow(color: c.cardShadow, radius: 8, x: 0, y: 3)
+    }
+
+    private func importantAnswerPill(_ label: String, _ mode: AssistMode) -> some View {
+        let isSelected = importantAnswer == mode
+        return Button {
+            withAnimation(.spring(response: 0.25)) { importantAnswer = isSelected ? nil : mode }
+        } label: {
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? c.onGold : c.text)
+                .padding(.horizontal, 22)
+                .frame(minHeight: 40)
+                .background(Capsule().fill(isSelected ? c.gold : c.card2))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - 3 Urgency Cards (grid row)
@@ -875,15 +729,29 @@ struct AddEventView: View {
 
     // MARK: - Helpers
 
+    /// The step bar, the step's content and its button, plus the home indicator.
+    private var fittedHeight: CGFloat {
+        (barHeight + contentHeight + footerHeight + bottomInset).rounded(.up)
+    }
+
     /// The active date shown in chips and used by quick-date/time taps
     private var activeDate: Date? { selectedDate ?? extractedDate }
 
     /// The active end date shown in the end-time chip
     private var activeEndDate: Date? { selectedEndDate ?? extractedEndDate }
 
-    /// Currently selected hour (for highlighting quick-time chips)
-    private var activeHour: Int? {
-        activeDate.map { Calendar.current.component(.hour, from: $0) }
+    /// Task or event, with no switch: the user's 🕑 choice, else inferred from
+    /// the end time, place, link and wording (`AddKind`).
+    private var isEventMode: Bool {
+        endChoice ?? AddKind.isEvent(hasEnd: activeEndDate != nil, draft: captureDraft, message: eventText)
+    }
+
+    /// The top of the next hour: the picker's starting point when nothing was read.
+    private static func nextHour() -> Date {
+        let cal = Calendar.current
+        let now = Date()
+        let top = cal.date(bySettingHour: cal.component(.hour, from: now), minute: 0, second: 0, of: now) ?? now
+        return top.addingTimeInterval(3600)
     }
 
     private var mlUrgency: EventUrgency {
@@ -926,22 +794,25 @@ struct AddEventView: View {
         }
     }
 
+    /// How much it matters, not when it is.
     private func urgencySubtitle(for urgency: EventUrgency) -> String {
         switch urgency {
-        case .high:   return "Must act\ntoday"
-        case .medium: return "This week"
-        case .low:    return "No rush yet"
+        case .high:   return "Can't be\nmissed"
+        case .medium: return "Matters"
+        case .low:    return "Routine"
         }
     }
 
+    /// What each tier sends, as Settings › Notifications schedules it
+    /// (ReminderSchedule: Critical adds the evening before and an hour before).
     private func notificationDescription(for urgency: EventUrgency) -> String {
         switch urgency {
         case .high:
-            return "Olana will remind you repeatedly throughout the day. You'll get alerts at key intervals so nothing slips."
+            return "A reminder the evening before, an hour before and just before it starts. It can break through Focus if you allow it in Settings."
         case .medium:
-            return "Olana will remind you once in the morning and once in the afternoon. No notifications at night. You can change this anytime from the task."
+            return "A reminder just before it starts, with sound."
         case .low:
-            return "Olana will send a gentle reminder a day before. No recurring alerts — it'll show up when it matters."
+            return "A quiet reminder just before it starts."
         }
     }
 
@@ -960,7 +831,6 @@ struct AddEventView: View {
                 if let s = start { extractedDate = s }
                 if let e = end {
                     extractedEndDate = e
-                    isEventMode = true   // NLP found a range → switch to Event mode
                 }
                 if recurrence != .none { selectedRecurrence = recurrence }
             }
@@ -986,11 +856,9 @@ struct AddEventView: View {
         }
     }
 
-    /// Takes a capture read, switching to Event when it found a place or link,
-    /// the way an end time does, unless the user picked Task themselves.
+    /// Takes a capture read. Task or event follows from it (`isEventMode`).
     private func applyCapture(_ draft: CaptureDraft) {
         captureDraft = draft
-        if draft.impliesEvent && !userChoseMode { isEventMode = true }
     }
 
     /// The capture for `text`: the live read when it's for the same text, so
@@ -1014,7 +882,7 @@ struct AddEventView: View {
             let baseTitle = extractTitle(from: text)
             captureTask?.cancel()
             async let captured = capture(for: text, title: baseTitle)
-            let classification = await UrgencyManager.shared.classify(text: text, date: dateHint)
+            let classification = await UrgencyManager.shared.classify(text: text, date: dateHint, typed: true)
             let draft = await captured
 
             if selectedDate == nil || (selectedEndDate == nil && extractedEndDate == nil) {
@@ -1022,7 +890,6 @@ struct AddEventView: View {
                 if selectedDate == nil, let s = start { extractedDate = s }
                 if selectedEndDate == nil && extractedEndDate == nil, let e = end {
                     extractedEndDate = e
-                    isEventMode = true
                 }
             }
             // Auto-set recurrence if detected and not already chosen by the user.
@@ -1032,6 +899,8 @@ struct AddEventView: View {
             }
             await MainActor.run {
                 mlClassification = classification
+                showTiers        = false
+                importantAnswer  = nil
                 captureBaseTitle = baseTitle
                 applyCapture(draft)
                 editedTitle      = draft.title(baseTitle, isTask: !isEventMode)
@@ -1057,7 +926,8 @@ struct AddEventView: View {
             semantics: mlClassification?.semantics,
             userPickedUrgency: userSelectedUrgency != nil,
             capture: captureDraft.effective, message: eventText,
-            place: captureDraft.place
+            place: captureDraft.place,
+            assistMode: mlClassification == nil ? importantAnswer : nil
         )
 
         if let classification = mlClassification {
@@ -1076,7 +946,9 @@ struct AddEventView: View {
     /// Hybrid extraction: NSDataDetector for start time (and range when unambiguous),
     /// regex fallback for end time when NSDataDetector reads "3 to 5" as a date range.
     /// Falls back to relative-offset patterns for "in 30 minutes" / "2 hours from now".
-    private func extractDateRangeFromText(_ text: String) async -> (start: Date?, end: Date?) {
+    private func extractDateRangeFromText(_ message: String) async -> (start: Date?, end: Date?) {
+        // "tomorrow by 5pm" reads as one moment only without the connector.
+        let text = AddKind.dateText(message)
         return await withCheckedContinuation { continuation in
             Task.detached(priority: .utility) {
                 let now      = Date()

@@ -140,7 +140,8 @@ final class AIAssistant: ObservableObject {
         case failed
     }
 
-    nonisolated func extract(title: String, calendarName: String? = nil) async -> Extraction {
+    /// `typed`: the user wrote this event in Olana, so a block can retry as "Personal".
+    nonisolated func extract(title: String, calendarName: String? = nil, typed: Bool = false) async -> Extraction {
         guard case .available = SystemLanguageModel.default.availability else { return .failed }
 
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -171,7 +172,7 @@ final class AIAssistant: ObservableObject {
                 // The safety filter surfaces as .refusal ("May contain sensitive content"),
                 // measured on macOS 26; .guardrailViolation is matched too in case that changes.
                 if Self.isSafetyBlock(error) {
-                    guard let label = EventSemanticsPrompt.retryCalendarLabel(after: calendarName) else {
+                    guard let label = EventSemanticsPrompt.retryLabel(after: calendarName, typed: typed) else {
                         return .failed
                     }
                     retryPrompt = EventSemanticsPrompt.prompt(title: trimmed, calendarName: label)
@@ -207,17 +208,25 @@ final class AIAssistant: ObservableObject {
         case failed
     }
 
+    #if DEBUG
+    /// Screenshot fixtures: a fixed judgement, for simulators without the model.
+    nonisolated(unsafe) static var fixtureSemantics: EventSemantics?
+    #endif
+
     /// Semantics for an event, or the reason there are none.
     ///
     /// There is deliberately no keyword fallback. Only the model's judgement is
     /// allowed to rank an event or ring an alarm; without it the event stays in
     /// chronological order and silent.
-    nonisolated func semantics(title: String, calendarName: String? = nil) async -> SemanticsOutcome {
+    nonisolated func semantics(title: String, calendarName: String? = nil, typed: Bool = false) async -> SemanticsOutcome {
         // A placeholder title cannot be classified honestly, by the model or anyone.
         guard !EventSemantics.isLowInformation(title: title) else { return .placeholder }
+        #if DEBUG
+        if let fixture = Self.fixtureSemantics { return .judged(fixture) }
+        #endif
         guard case .available = SystemLanguageModel.default.availability else { return .unavailable }
 
-        switch await extract(title: title, calendarName: calendarName) {
+        switch await extract(title: title, calendarName: calendarName, typed: typed) {
         case .judged(let s): return .judged(s)
         // Treated like the model being unavailable: nothing is recorded against
         // the event, and backfill stops asking for this run.

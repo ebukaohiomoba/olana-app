@@ -14,8 +14,27 @@ import UserNotifications
 struct DeveloperSettingsView: View {
     @Environment(\.olanaTheme) private var theme
     @ObservedObject private var plus = PlusStore.shared
+    @State private var onboarding: OnboardingReplay?
+
+    /// How to replay onboarding from here, without touching the saved state.
+    enum OnboardingReplay: String, Identifiable {
+        case real, sample, autoplay
+        var id: String { rawValue }
+    }
 
     var body: some View {
+        content
+            .fullScreenCover(item: $onboarding) { mode in
+                OnboardingView(
+                    replay: true,
+                    fixture: mode == .real ? nil
+                        : .init(reveal: RevealFixture.source(), autoplay: mode == .autoplay)
+                ) { onboarding = nil }
+                .homePalette()
+            }
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(spacing: 24) {
                 DevSection(title: "Developer") {
@@ -56,19 +75,29 @@ struct DeveloperSettingsView: View {
 
                     Divider().padding(.leading, 66)
 
-                    Button {
-                        UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+                    Menu {
+                        Button("Show with my calendar") { onboarding = .real }
+                        Button("Show with a sample week") { onboarding = .sample }
+                        Button("Play itself (sample week)") { onboarding = .autoplay }
+                        Button("Reset: show as the app's start", role: .destructive) {
+                            UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+                        }
                     } label: {
                         HStack(spacing: 14) {
-                            Image(systemName: "arrow.counterclockwise")
+                            Image(systemName: "sparkles.rectangle.stack")
                                 .font(.title3)
                                 .foregroundStyle(.orange)
                                 .frame(width: 36, height: 36)
                                 .background(Circle().fill(Color.orange.opacity(0.12)))
 
-                            Text("Reset Onboarding")
-                                .font(.body)
-                                .foregroundStyle(theme.colors.ink)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Show onboarding")
+                                    .font(.body)
+                                    .foregroundStyle(theme.colors.ink)
+                                Text("Every step, notifications ask included")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
 
                             Spacer()
                         }

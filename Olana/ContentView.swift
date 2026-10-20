@@ -42,12 +42,10 @@ struct ContentView: View {
         }
         .homePalette()
         .sheet(isPresented: $showingAdd) {
+            // AddEventView sizes its own sheet to its content.
             AddEventView()
                 .environmentObject(store)
                 .homePalette()
-                .presentationDetents([.fraction(0.75), .large])
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(24)
         }
         .sheet(isPresented: $plus.showPaywall) { PlusPaywallView().homePalette() }
         .sheet(isPresented: $plus.showSummary, onDismiss: { plus.markSummaryShown() }) {

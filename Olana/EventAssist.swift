@@ -192,7 +192,9 @@ struct AssistInput: Equatable {
 }
 
 enum AssistPrompt {
-    static let version = 1
+    /// 2: prep guard rules (2026-10-19 audit). Cached answers are filtered, so
+    /// a guard change bumps this to re-read each event once.
+    static let version = 2
     static let notesLimit = 400
 
     static let instructions = """
@@ -331,14 +333,90 @@ enum RoomPatterns {
 /// Things that aren't things to bring.
 private let emptyBring: Set<String> = ["none", "nothing", "n/a", "na", "no", "-", "tbd"]
 
-/// Prep steps are actions: they start with a verb from this list.
+/// Prep steps are actions: they start with a verb from this list. Not "go":
+/// getting there is the Leave helper's job, with a time. Not "open": "Open
+/// note" is a rule about a test, not something to do (links are Materials).
 let stepVerbs: Set<String> = ["review", "read", "skim", "print", "send", "bring", "pack", "prepare", "prep", "practice",
                               "rehearse", "update", "draft", "write", "finish", "fill", "sign", "book", "buy", "pick",
                               "check", "confirm", "submit", "study", "charge", "gather", "collect", "email", "share",
-                              "outline", "list", "note", "jot", "go", "look", "think", "decide", "choose", "compile",
+                              "outline", "list", "note", "jot", "look", "think", "decide", "choose", "compile",
                               "create", "make", "plan", "test", "set", "bake", "cook", "order", "renew", "find",
-                              "copy", "label", "sort", "clean", "wrap", "load", "fill", "ask", "add", "bookmark", "open",
-                              "join", "watch", "listen", "complete", "finalize", "summarize", "edit", "proofread"]
+                              "copy", "label", "sort", "clean", "wrap", "load", "ask", "add", "bookmark",
+                              "join", "watch", "listen", "complete", "finalize", "summarize", "edit", "proofread",
+                              "follow", "fast", "wear", "avoid", "upload", "arrange", "take", "eat", "drink", "pay",
+                              "download", "do", "don't", "dont", "stop"]
+
+/// Steps about getting there. The Leave helper covers them, with the real time.
+let travelVerbs: Set<String> = ["go", "head", "drive", "walk", "arrive", "attend", "leave", "travel", "commute"]
+
+/// Steps whose object ends up in hand: "Print the agenda" still means bring it.
+/// Any other verb uses the thing up first ("Buy groceries", "Set the table").
+let carryVerbs: Set<String> = ["print", "pack", "bring", "pick", "charge", "gather", "collect", "grab", "copy",
+                               "label", "wrap", "load", "renew", "sign", "fill", "complete"]
+
+/// People aren't items: "Bring a driver" is "Arrange a driver".
+let personItems: Set<String> = ["driver", "ride", "babysitter", "sitter", "chaperone", "caregiver", "companion", "escort"]
+
+/// Words that name an event rather than something for it: "quiz sheet",
+/// "Prepare for exam" and "test materials" are the event itself.
+enum AssistText {
+    static let eventNouns: Set<String> = ["test", "exam", "quiz", "quizze", "midterm", "final", "lab", "practical", "class",
+                                          "lecture", "session", "meeting", "appointment", "appt", "interview", "game",
+                                          "match", "recital", "presentation", "party", "wedding", "flight", "event",
+                                          "course", "conference", "ceremony", "call", "visit", "checkup"]
+    static let eventForms: Set<String> = ["sheet", "paper", "material"]
+    static let stopwords: Set<String> = ["the", "a", "an", "my", "your", "our", "their", "his", "her", "for", "to", "of",
+                                         "on", "at", "in", "and", "all", "this", "that", "with", "from", "some", "any",
+                                         "before", "after", "by", "up", "out", "not", "is", "it", "be", "please"]
+
+    static func contentWords(_ text: String) -> Set<String> {
+        TextGuard.tokens(text).subtracting(stopwords)
+    }
+
+    /// True when the words are only the event: its title words and event nouns,
+    /// with at least one event noun ("quiz sheet"), or the whole title ("Dentist").
+    static func isTheEvent(_ text: String, title: String) -> Bool {
+        let words = contentWords(text)
+        guard !words.isEmpty else { return false }
+        let titleWords = contentWords(title)
+        let eventish = eventNouns.union(eventForms)
+        if words == titleWords { return true }
+        return words.isSubset(of: titleWords.union(eventish)) && !words.isDisjoint(with: eventish)
+    }
+
+    /// "the gift" and "gift" are one item; "resume" and "copies" are part of
+    /// "resume copies". Keeps the fullest wording, without a leading "your"/"the".
+    static func merge(_ items: [String]) -> [String] {
+        let cleaned = items.map(stripLead)
+        var out: [String] = []
+        for (i, item) in cleaned.enumerated() {
+            let w = contentWords(item)
+            guard !w.isEmpty else { continue }
+            let covered = cleaned.enumerated().contains { j, other in
+                guard j != i else { return false }
+                let o = contentWords(other)
+                return w == o ? j < i : w.isSubset(of: o)
+            }
+            if !covered { out.append(item) }
+        }
+        return out
+    }
+
+    /// A flight number or booking code ("Delta DL 1234", "ABC123"): a fact from
+    /// the invite, not something to bring.
+    static func isBookingCode(_ s: String) -> Bool {
+        s.range(of: #"\b[A-Z]{2}\s?\d{2,4}\b"#, options: .regularExpression) != nil
+            || s.range(of: #"\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5,8}\b"#, options: .regularExpression) != nil
+    }
+
+    static func stripLead(_ s: String) -> String {
+        var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let r = t.range(of: #"^(?i)(the|your|my|all|a|an|some)\s+"#, options: .regularExpression) {
+            t.removeSubrange(r)
+        }
+        return t
+    }
+}
 
 enum AssistGuard {
     /// Model answer → what the sheet may show (PRD v3 §3.8).
@@ -347,24 +425,39 @@ enum AssistGuard {
         let source = (input.title + "\n" + InjectionGuard.promptNotes(input.facts.cleanedNotes) + "\n"
                       + input.savedSteps.joined(separator: "\n")).lowercased()
 
-        // Steps: actions, nothing sensitive, then the text guard.
-        let stepCandidates = (input.wantsSteps ? raw.steps : []).filter { s in
-            let first = s.lowercased().split(separator: " ").first.map(String.init) ?? ""
+        // Steps: actions, nothing sensitive, not travel, not the event itself, then the text guard.
+        var stepCandidates = (input.wantsSteps ? raw.steps : []).filter { s in
+            let parts = s.lowercased().split(separator: " ").map(String.init)
+            let first = parts.first ?? ""
             if InjectionGuard.isSensitive(s) { dropped.append("step (sensitive): \(s)"); return false }
+            if travelVerbs.contains(first) { dropped.append("step (getting there): \(s)"); return false }
             if !stepVerbs.contains(first) { dropped.append("step (not an action): \(s)"); return false }
+            // "Do not eat after midnight": the object follows "do not".
+            let skip = first == "do" && parts.dropFirst().first == "not" ? 2 : 1
+            let object = s.split(separator: " ").dropFirst(skip).joined(separator: " ")
+            // "Prepare for the quiz" is the event; "Practice the speech" is real prep.
+            if !["practice", "rehearse"].contains(first), AssistText.isTheEvent(object, title: input.title) {
+                dropped.append("step (the event itself): \(s)"); return false
+            }
             // It must name something the notes or saved steps mention, so
             // "Prepare for the meeting" (true of every event) doesn't show.
-            let object = s.split(separator: " ").dropFirst().joined(separator: " ")
             if !grounded(object, in: source, title: input.title, threshold: 0.01) { dropped.append("step (vague): \(s)"); return false }
             return true
         }
-        // Bring: grounded in the title or the notes, not the event itself, nothing sensitive.
+        // Bring: grounded in the notes (or a title that says "bring"), not the
+        // event itself, nothing sensitive. A person is something to arrange.
         let bringCandidates = raw.bring.filter { b in
             let t = b.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
             if emptyBring.contains(t) { return false }
             if InjectionGuard.isSensitive(b) { dropped.append("bring (sensitive): \(b)"); return false }
-            if t == input.title.lowercased() { dropped.append("bring (the event): \(b)"); return false }
+            if AssistText.isTheEvent(t, title: input.title) { dropped.append("bring (the event itself): \(b)"); return false }
+            if AssistText.isBookingCode(b) { dropped.append("bring (a booking code): \(b)"); return false }
             if !grounded(t, in: source, title: input.title) { dropped.append("bring (not in the invite): \(b)"); return false }
+            let words = AssistText.contentWords(t)
+            if words.count == 1, let who = words.first, personItems.contains(who) {
+                if input.wantsSteps { stepCandidates.append("Arrange a \(who)") }
+                return false
+            }
             return true
         }
         // "Bring X" as a step is a bring item; it shows once, in Bring.
@@ -376,8 +469,20 @@ enum AssistGuard {
             if !bringAll.contains(where: { $0.lowercased() == object.lowercased() }) { bringAll.append(object) }
             return false
         }
-        let steps = TextGuard.filter(realSteps)
-        let bring = TextGuard.filter(bringAll)
+        // What a step uses up isn't brought: "Buy groceries", "Set the table".
+        let usedUp = realSteps.compactMap { s -> Set<String>? in
+            let verb = s.lowercased().split(separator: " ").first.map(String.init) ?? ""
+            guard !carryVerbs.contains(verb) else { return nil }
+            return AssistText.contentWords(s.split(separator: " ").dropFirst().joined(separator: " "))
+        }
+        bringAll = bringAll.filter { b in
+            let w = AssistText.contentWords(b)
+            guard !w.isEmpty, usedUp.contains(where: { w.isSubset(of: $0) }) else { return true }
+            dropped.append("bring (a step uses it): \(b)")
+            return false
+        }
+        let steps = TextGuard.filter(realSteps, source: source)
+        let bring = TextGuard.filter(AssistText.merge(bringAll), source: source)
         dropped += steps.dropped.map { "step: \($0)" } + bring.dropped.map { "bring: \($0)" }
 
         let knownIDs = Set(input.facts.links.map(\.id))
@@ -422,15 +527,16 @@ enum AssistGuard {
     }
 
     /// A bring item is grounded when its words appear in the title or the notes.
-    /// Words of the title alone ("dinner" for "Dinner with Sam") are the event, not an item.
+    /// Words of the title alone ("dinner" for "Dinner with Sam") are the event, not
+    /// an item, unless the title says "bring" or "pack". ("Take mom to the airport"
+    /// is a trip, not a bring list.) Whole words, so "ID" and "W-2s" count.
     static func grounded(_ item: String, in source: String, title: String, threshold: Double = 0.5) -> Bool {
-        let words = item.split(whereSeparator: { !$0.isLetter }).map { $0.lowercased() }
-            .filter { $0.count > 2 && !["the", "and", "for", "your", "with"].contains($0) }
+        let words = AssistText.contentWords(item)
         guard !words.isEmpty else { return false }
-        // Title words count only when the title itself says to bring something.
-        let titleSaysBring = ["bring", "pack", "take"].contains { title.lowercased().contains($0 + " ") }
+        let titleSaysBring = ["bring", "pack"].contains { title.lowercased().contains($0 + " ") }
         let notes = titleSaysBring ? source : source.replacingOccurrences(of: title.lowercased(), with: " ")
-        let inNotes = words.filter { notes.contains($0) }.count
+        let tokens = TextGuard.tokens(notes)
+        let inNotes = words.filter { tokens.contains($0) }.count
         // Most of its words must appear in the notes (or saved steps).
         return Double(inNotes) / Double(words.count) >= threshold
     }

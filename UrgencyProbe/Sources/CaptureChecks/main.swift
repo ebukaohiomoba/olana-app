@@ -262,5 +262,38 @@ check("chip: says not found", lost?.detail == "not found" && lost?.found == fals
 check("chip: asks which one", CaptureDraft(result: r1, match: .choose([dental, dental]), message: m1).placeChip?.label == "Which Smile Dental?")
 check("chip: none when removed", placeGone.placeChip == nil)
 
+// MARK: Task or event, inferred
+
+func kind(_ msg: String, end: Bool = false, _ out: CaptureModelOutput? = nil) -> Bool {
+    AddKind.isEvent(hasEnd: end, draft: CaptureDraft(result: CaptureCode.combine(message: msg, title: msg, model: out), message: msg),
+                    message: msg)
+}
+check("kind: an end time makes an event", kind("standup 9 to 9:15", end: true))
+check("kind: a place makes an event", kind("dentist 3pm at smile dental", CaptureModelOutput(placeText: "smile dental", attendance: .inPerson)))
+check("kind: in person makes an event", kind("dentist tomorrow 3pm", CaptureModelOutput(attendance: .inPerson, likelyNeedsTravel: true)))
+check("kind: a call makes an event", kind("call with sam 4pm", CaptureModelOutput(attendance: .virtual)))
+check("kind: a deadline is a task even in person", !kind("submit the form by 5pm", CaptureModelOutput(attendance: .inPerson)))
+check("kind: due is a task", !kind("report due friday", CaptureModelOutput(attendance: .unsure)))
+check("kind: remind me to is a task", !kind("remind me to call the bank at 2", CaptureModelOutput(attendance: .virtual)))
+check("kind: unsure with no place is a task", !kind("pay rent friday", CaptureModelOutput(attendance: .unsure)))
+check("kind: no model, no place, is a task", !kind("gym 6pm"))
+check("kind: an end time beats a deadline word", kind("finish deck by 5, 3 to 5", end: true))
+check("kind: 'by' a person isn't a deadline", kind("coffee with jo, hosted by sam 3pm", CaptureModelOutput(attendance: .inPerson)))
+
+// MARK: Deadline wording reads as one moment
+
+func detected(_ msg: String) -> DateComponents? {
+    let t = AddKind.dateText(msg)
+    guard let d = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue),
+          let m = d.matches(in: t, range: NSRange(t.startIndex..., in: t)).first, let date = m.date else { return nil }
+    return Calendar.current.dateComponents([.day, .hour], from: date)
+}
+let tomorrowDay = Calendar.current.component(.day, from: Date().addingTimeInterval(86_400))
+for msg in ["Submit expenses tomorrow by 5pm", "report due tomorrow 5pm", "Submit expenses by 5pm tomorrow", "renew passport tomorrow before 5pm"] {
+    let got = detected(msg)
+    check("dates: '\(msg)' is 5pm tomorrow", got?.hour == 17 && got?.day == tomorrowDay, "\(String(describing: got))")
+}
+check("dates: only the detector copy loses the connector", AddKind.dateText("drop by Sam's at 3") == "drop Sam's at 3")
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

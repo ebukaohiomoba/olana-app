@@ -60,6 +60,9 @@ struct NextCard: Equatable {
     var secondary: String? = nil
     /// At most one inline action under the runway (spec v3 §14.8).
     var action: CardAction? = nil
+    /// "Up next" rather than "Next that matters": shown when nothing qualifies,
+    /// so it carries no tier color and makes no claim about importance.
+    var quiet = false
 
     struct Runway: Equatable {
         let from: Date          // left edge; holds still so the fill advances
@@ -93,11 +96,16 @@ struct NextCard: Equatable {
     /// The card's line as plain text: "Start prepping by 2:20".
     var line: String { lead + gold + trail }
 
+    /// Something to do before it starts (prep, get ready, leave, join): on an
+    /// open day this shows as the full card rather than a one-line peek.
+    var needsActionFirst: Bool { ![.startsAt, .happeningNow].contains(phase) }
+
     /// One element, title then line, as in PRD §3.15 ("Client review, leave by
     /// 2:26, 14 minute walk"), then tier and time so tier is never color alone.
     var accessibilityLabel: String {
-        var parts = [title, line.lowercasedFirst, HomeFormat.tierName(urgency),
-                     "\(HomeFormat.clock(start)) to \(HomeFormat.clock(end))"]
+        var parts = [title, line.lowercasedFirst]
+        if !quiet { parts.append(HomeFormat.tierName(urgency)) }
+        parts.append("\(HomeFormat.clock(start)) to \(HomeFormat.clock(end))")
         if let secondary { parts.append(secondary) }
         return parts.joined(separator: ", ")
     }
@@ -146,6 +154,19 @@ struct RailItem: Identifiable, Equatable {
     let prepFrom: Date?
     /// A task whose time has passed and isn't done: held at `now`, not red.
     let isOverdueTask: Bool
+    /// "Leave by 2:34 · 18 min drive", on days other than today, where there's
+    /// no card to say it.
+    var note: String? = nil
+}
+
+/// One day in the week ribbon: its date and the tiers of what matters that
+/// day (at most three dots, most urgent first).
+struct RibbonDay: Equatable, Identifiable {
+    let date: Date
+    let dots: [EventUrgency]
+    let isToday: Bool
+    let isPast: Bool
+    var id: Date { date }
 }
 
 struct DoneItem: Identifiable, Equatable {
@@ -165,6 +186,13 @@ struct HomeDay: Equatable {
     let bed: Date?
     /// Empty-state peek: the next event that matters on a later day.
     let peek: NextCard?
+    /// When nothing on today's rail matters enough for the card: the next thing
+    /// on the rail, as a quiet "Up next" card (no tier, no importance claim).
+    var upNext: NextCard? = nil
+    /// The week ribbon above the day (Sun–Sat, the locale's first weekday).
+    var week: [RibbonDay] = []
+    /// false when the ribbon shows another day: no card, no "now", no done list.
+    var isToday = true
 
     var isOpen: Bool { rail.isEmpty }
 
@@ -261,10 +289,80 @@ enum HomeDayBuilder {
             return b
         }
 
+        let shownCard = rail.isEmpty ? nil : card
         return HomeDay(now: now,
-                       card: rail.isEmpty ? nil : card,
+                       card: shownCard,
                        rail: rail, allDay: allDay, done: done,
-                       bed: bedToday, peek: peek)
+                       bed: bedToday, peek: peek,
+                       upNext: shownCard == nil ? upNext(rail: rail, inputs: timed, now: now, calendar: calendar) : nil,
+                       week: week(inputs: inputs, now: now, calendar: calendar))
+    }
+
+    /// Another day from the ribbon: its events and tasks in order, no card and
+    /// no "now". `now` is still the real time, for prep and leave-by.
+    static func build(inputs: [Input], day: Date, now: Date, calendar: Calendar = .current) -> HomeDay {
+        let onDay = inputs.filter { calendar.isDate($0.start, inSameDayAs: day) }
+        let allDay = onDay.filter { $0.isAllDay && !$0.completed }.map(\.title)
+        let rail = onDay.filter { !$0.isAllDay && !$0.completed }
+            .sorted { $0.start < $1.start }
+            .map { e -> RailItem in
+                var item = railItem(e, now: now)
+                item.note = leaveNote(e)
+                return item
+            }
+        // The rail starts at the first thing on it, not at midnight.
+        let top = rail.map { $0.prepFrom ?? $0.start }.min() ?? calendar.startOfDay(for: day)
+        return HomeDay(now: max(top, calendar.startOfDay(for: day)), card: nil, rail: rail, allDay: allDay, done: [],
+                       bed: nil, peek: nil, week: week(inputs: inputs, now: now, calendar: calendar), isToday: false)
+    }
+
+    /// "Leave by 2:34 · 18 min drive" when there's a leave time and Plus.
+    static func leaveNote(_ e: Input) -> String? {
+        guard e.hasPlus, !e.isTask, let leave = times(e).leaveBy else { return nil }
+        return "Leave by \(HomeFormat.clock(leave))" + (e.tripPhrase.map { " · \($0)" } ?? "")
+    }
+
+    /// The week containing `now`: a dot per event that matters (assisted, not
+    /// done, not over), most urgent first, at most three. Past days get none.
+    static func week(inputs: [Input], now: Date, calendar: Calendar = .current) -> [RibbonDay] {
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: now) else { return [] }
+        let today = calendar.startOfDay(for: now)
+        return (0..<7).compactMap { offset -> RibbonDay? in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: interval.start) else { return nil }
+            let day = calendar.startOfDay(for: date)
+            let isPast = day < today
+            let dots = isPast ? [] : inputs
+                .filter { calendar.isDate($0.start, inSameDayAs: day) && $0.assisted && !$0.completed
+                          && !$0.isAllDay && ($0.isTask ? true : $0.end > now) }
+                .map(\.urgency)
+                .sorted { $0.rawValue > $1.rawValue }
+            return RibbonDay(date: day, dots: Array(dots.prefix(3)), isToday: day == today, isPast: isPast)
+        }
+    }
+
+    /// The first thing on the rail, said plainly: "Starts at 5:30", "Happening
+    /// now", "Due at 5:00", "Still to do". Never a prep or leave time, since
+    /// those are for events that matter.
+    static func upNext(rail: [RailItem], inputs: [Input], now: Date, calendar: Calendar) -> NextCard? {
+        guard let first = rail.first, let e = inputs.first(where: { $0.id == first.id }) else { return nil }
+        let lead: String, gold: String, trail: String
+        if e.isTask {
+            if e.start <= now { (lead, gold, trail) = ("Still ", "to do", " · was due \(HomeFormat.clock(e.start))") }
+            else { (lead, gold, trail) = ("Due at ", HomeFormat.clock(e.start), "") }
+        } else if e.start <= now {
+            (lead, gold, trail) = ("Happening ", "now", "")
+        } else {
+            (lead, gold, trail) = ("Starts at ", HomeFormat.clock(e.start), "")
+        }
+        var detail = e.isTask ? "Task" : HomeFormat.range(e.start, e.end)
+        if !e.isTask, let place = e.location?.trimmingCharacters(in: .whitespacesAndNewlines), !place.isEmpty {
+            detail += " · \(place)"
+        }
+        return NextCard(eventID: e.id, title: e.title, urgency: e.urgency, start: e.start, end: e.end,
+                        place: e.location, phase: e.start <= now ? .happeningNow : .startsAt,
+                        lead: lead, gold: gold, trail: trail, detail: detail,
+                        runway: e.isTask ? nil : runway(start: e.start, prepFrom: nil, now: now),
+                        quiet: true)
     }
 
     private static func railItem(_ e: Input, now: Date) -> RailItem {

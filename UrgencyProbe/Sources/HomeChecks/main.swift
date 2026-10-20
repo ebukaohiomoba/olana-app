@@ -267,5 +267,67 @@ expect("jit: the calendar-alerts tip a week after onboarding, once",
          && jit(undetermined: false, tip: true, now: at(9, 0, day: 8)) == nil)
 expect("jit: one at a time, notifications before the tip", jit(now: at(9, 0, day: 8)) == .notifications(eventTitle: "Client review"))
 
+// Retry label after a safety block: typed events retry as "Personal".
+expect("retry: a typed event retries as Personal", EventSemanticsPrompt.retryLabel(after: nil, typed: true) == "Personal")
+expect("retry: a synced event with no calendar name doesn't", EventSemanticsPrompt.retryLabel(after: nil, typed: false) == nil)
+expect("retry: an email-named calendar keeps its account label",
+       EventSemanticsPrompt.retryLabel(after: "jane@acmecorp.com", typed: true) == "Work")
+expect("retry: a named calendar was already sent, so no retry", EventSemanticsPrompt.retryLabel(after: "Family", typed: true) == nil)
+
+// "Up next" when nothing matters enough: the rail's first item, plainly.
+func task(_ title: String, _ start: Date, done: Bool = false) -> HomeDayBuilder.Input {
+    .init(id: UUID(), title: title, start: start, end: start, isAllDay: false, isTask: true, completed: done,
+          completedAt: nil, isRecurring: false, location: nil, urgency: .low, scored: nil, prepHours: nil, assisted: false)
+}
+let quietDay = HomeDayBuilder.build(inputs: [ev("Coffee", at(14, 0), .low, place: "Blue Bottle", assisted: false),
+                                            ev("Gym", at(18, 0), .low, assisted: false)], now: at(13, 0), bed: nil)
+expect("up next: shown when nothing matters", quietDay.card == nil && quietDay.upNext?.title == "Coffee"
+       && quietDay.upNext?.line == "Starts at 2:00" && quietDay.upNext?.quiet == true, "\(String(describing: quietDay.upNext))")
+expect("up next: no tier in VoiceOver", !(quietDay.upNext?.accessibilityLabel.contains("later") ?? true))
+expect("up next: never a prep time", HomeDayBuilder.build(inputs: [ev("Lunch", at(14, 0), .low, prep: 2, assisted: false)],
+                                                         now: at(13, 0), bed: nil).upNext?.line == "Starts at 2:00")
+expect("up next: not when something matters", HomeDayBuilder.build(inputs: [ev("Coffee", at(14, 0), .low, assisted: false),
+                                                                  ev("Interview", at(16, 0), .high)],
+                                                                 now: at(13, 0), bed: nil).upNext == nil)
+let taskDay = HomeDayBuilder.build(inputs: [task("Submit expenses", at(17, 0))], now: at(13, 0), bed: nil)
+expect("up next: a task is due", taskDay.upNext?.line == "Due at 5:00" && taskDay.upNext?.runway == nil,
+       "\(taskDay.upNext?.line ?? "nil")")
+let lateTask = HomeDayBuilder.build(inputs: [task("Call the bank", at(11, 0)), ev("Gym", at(18, 0), .low, assisted: false)],
+                                    now: at(13, 0), bed: nil)
+expect("up next: an overdue task comes first", lateTask.upNext?.line == "Still to do · was due 11:00", "\(lateTask.upNext?.line ?? "nil")")
+expect("up next: none on an open day", HomeDayBuilder.build(inputs: [], now: at(13, 0), bed: nil).upNext == nil)
+
+// Open day: tomorrow's prep is a full card, a plain start stays a peek.
+let examEve = HomeDayBuilder.build(inputs: [ev("Exam", at(9, 0, day: 1), .high, prep: 12)], now: at(20, 0), bed: nil)
+expect("open day: prep tonight needs the full card", examEve.isOpen && examEve.peek?.needsActionFirst == true,
+       "\(examEve.peek?.line ?? "nil")")
+let plainPeek = HomeDayBuilder.build(inputs: [ev("Review", at(9, 0, day: 2), .high)], now: at(13, 0), bed: nil)
+expect("open day: a plain start stays a peek", plainPeek.peek?.needsActionFirst == false)
+
+// Week ribbon: dots for what matters, most urgent first, none on past days.
+let wkInputs = [ev("Client review", at(15, 0), .high), ev("Coffee", at(16, 0), .low, assisted: false),
+                ev("Dentist", at(15, 0, day: 1), .medium),
+                ev("Board", at(9, 0, day: 2), .medium), ev("Exam", at(13, 0, day: 2), .high),
+                ev("Pitch", at(15, 0, day: 2), .medium), ev("Review", at(17, 0, day: 2), .low),
+                ev("Earlier", at(9, 0), .high)]
+let wk = HomeDayBuilder.build(inputs: wkInputs, now: at(13, 0), bed: nil).week
+let tue = wk.first { cal.isDate($0.date, inSameDayAs: at(0, 0)) }
+let thu = wk.first { cal.isDate($0.date, inSameDayAs: at(0, 0, day: 2)) }
+expect("week: seven days, today marked", wk.count == 7 && wk.filter(\.isToday).count == 1 && tue?.isToday == true)
+expect("week: today's dots skip what's over or doesn't matter", tue?.dots == [.high], "\(String(describing: tue?.dots))")
+expect("week: most urgent first, at most three", thu?.dots == [.high, .medium, .medium], "\(String(describing: thu?.dots))")
+expect("week: past days have no dots", wk.filter(\.isPast).allSatisfy { $0.dots.isEmpty })
+
+// Another day: its events in order, no card, no "now", a leave-by note.
+var dentistTrip = ev("Dentist", at(15, 0, day: 1), .medium, place: "Smile Dental")
+dentistTrip.exec = ExecTimes(.init(start: at(15, 0, day: 1), end: at(16, 0, day: 1), actBy: nil, attendance: .inPerson,
+                            needsTravel: true, eta: 18 * 60, arriveEarly: 10 * 60, outTheDoor: 5 * 60))
+dentistTrip.tripPhrase = "18 min drive"
+let other = HomeDayBuilder.build(inputs: [dentistTrip, ev("Standup", at(9, 30, day: 1), minutes: 15, .low, assisted: false)],
+                                 day: at(0, 0, day: 1), now: at(13, 0))
+expect("other day: in order, no card", other.rail.map(\.title) == ["Standup", "Dentist"] && other.card == nil && !other.isToday)
+expect("other day: the rail starts at its first event", other.now == at(9, 30, day: 1))
+expect("other day: leave-by on the row", other.rail.last?.note == "Leave by 2:32 · 18 min drive", other.rail.last?.note ?? "nil")
+
 print(failures == 0 ? "\nAll checks passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)
